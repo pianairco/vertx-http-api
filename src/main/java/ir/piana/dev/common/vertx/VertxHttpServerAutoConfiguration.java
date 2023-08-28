@@ -8,9 +8,8 @@ import io.vertx.core.http.HttpServerResponse;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
-import io.vertx.ext.web.client.WebClient;
-import io.vertx.ext.web.client.WebClientOptions;
 import ir.piana.dev.common.handler.*;
+import ir.piana.dev.jsonparser.json.JsonParser;
 import lombok.Setter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,20 +25,8 @@ import java.util.*;
 
 @Configuration
 @Import(VertxAutoConfiguration.class)
-public class VertxHttpAutoConfiguration {
+public class VertxHttpServerAutoConfiguration {
     private final Logger logger = LoggerFactory.getLogger(this.getClass());
-
-    @Bean
-    @Profile("vertx-http-client")
-    WebClient webClient(Vertx vertx, VertxHttp http) {
-        return WebClient.create(vertx, new WebClientOptions()
-                .setSsl(Boolean.FALSE)
-                .setMaxPoolSize(http.client.maxPoolSize)
-                .setReusePort(Boolean.TRUE)
-                .setTcpQuickAck(Boolean.TRUE)
-                .setTcpCork(Boolean.TRUE)
-                .setTcpFastOpen(Boolean.TRUE));
-    }
 
     @Bean
     @Profile("vertx-http-server")
@@ -69,6 +56,7 @@ public class VertxHttpAutoConfiguration {
     @Bean
     @Profile("vertx-http-server")
     Router router(Vertx vertx, VertxRouter vertxRouter,
+                  JsonParser jsonParser,
                   HandlerManager handlerManager,
                   Map<String, Class> vertxHandlerClassMap,
                   Map<String, Class> vertxDtoClassMap) {
@@ -101,9 +89,10 @@ public class VertxHttpAutoConfiguration {
                                              */
                                             handle(item, handlerManager, vertxHandlerClassMap,
                                                     routingContext,
-                                                    RequestDtoBuilder.fromJson(
-                                                                    bodyHandler.toJsonObject(), vertxDtoClassMap.get(item.dtoType))
-                                                            .addAdditionalParams(routingContext.request().params()).build());
+                                                    HandlerRequestBuilder.fromBuffer(jsonParser, bodyHandler,
+                                                                    vertxDtoClassMap.get(item.dtoType))
+                                                            .addAdditionalParams(routingContext.request().params())
+                                                            .build());
                                         } catch (Exception exception) {
                                             logger.error(exception.getMessage());
                                             error(routingContext.response(), exception);
@@ -112,7 +101,7 @@ public class VertxHttpAutoConfiguration {
                                 } else {
                                     handle(item, handlerManager, vertxHandlerClassMap,
                                             routingContext,
-                                            RequestDtoBuilder.withoutRequest()
+                                            HandlerRequestBuilder.withoutRequest()
                                                     .addAdditionalParams(routingContext.queryParams())
                                                     .build());
                                 }
@@ -131,10 +120,10 @@ public class VertxHttpAutoConfiguration {
             VertxRouteItem item,
             HandlerManager handlerManager,
             Map<String, Class> handlerClassMap,
-            RoutingContext routingContext, RequestDto requestDto) {
+            RoutingContext routingContext, HandlerRequest handlerRequest) {
         try {
             DeferredResult<HandlerContext<?>> deferredResult = handlerManager.execute(
-                    handlerClassMap.get(item.handlerClass), UUID.randomUUID().toString(), requestDto);
+                    handlerClassMap.get(item.handlerClass), UUID.randomUUID().toString(), handlerRequest);
 
             deferredResult.setResultHandler(ctx -> {
                 HandlerContext handlerContext = (HandlerContext) ctx;
@@ -199,11 +188,11 @@ public class VertxHttpAutoConfiguration {
 
     @Bean
     @Profile("vertx-http-server")
-    HttpServer httpServer(Vertx vertx, Router router, VertxHttp http) {
+    HttpServer httpServer(Vertx vertx, Router router, VertxHttpServer server) {
         HttpServer httpServer = vertx.createHttpServer(new HttpServerOptions()
-                .setHost(http.server.host)
-                .setPort(http.server.port)
-                .setIdleTimeout(http.server.idleTimeout)
+                .setHost(server.host)
+                .setPort(server.port)
+                .setIdleTimeout(server.idleTimeout)
                 .setReusePort(Boolean.TRUE)
                 .setTcpQuickAck(Boolean.TRUE)
                 .setTcpCork(Boolean.TRUE)
@@ -213,7 +202,7 @@ public class VertxHttpAutoConfiguration {
             throw new RuntimeException(cause.getMessage());
 
         logger.info("Successfully started HTTP server and listening on {}:{} with native transport {}",
-                http.server.host, http.server.port,
+                server.host, server.port,
                 vertx.isNativeTransportEnabled() ? "enabled" : "not enabled");
 
         return httpServer;
@@ -221,22 +210,8 @@ public class VertxHttpAutoConfiguration {
 
     @Setter
     @Component
-    @ConfigurationProperties(prefix = "ir.piana.dev.common.vertx-http")
+    @ConfigurationProperties(prefix = "ir.piana.dev.common.vertx.http-server")
     @Profile("vertx-http-server")
-    static class VertxHttp {
-        private VertxHttpServer server;
-        private VertxHttpClient client;
-    }
-
-    @Setter
-    static class VertxMetrics {
-        private boolean enabled;
-        private String host;
-        private int port;
-        private String endpoint;
-    }
-
-    @Setter
     static class VertxHttpServer {
         private String host;
         private int port;
@@ -247,13 +222,8 @@ public class VertxHttpAutoConfiguration {
     }
 
     @Setter
-    static class VertxHttpClient {
-        private int maxPoolSize;
-    }
-
-    @Setter
     @Component
-    @ConfigurationProperties(prefix = "ir.piana.dev.common.vertx-router")
+    @ConfigurationProperties(prefix = "ir.piana.dev.common.vertx.router")
     @Profile("vertx-http-server")
     static class VertxRouter {
         List<VertxRouteItem> items;
@@ -269,5 +239,4 @@ public class VertxHttpAutoConfiguration {
         private String responseType;
         private String response;
     }
-
 }
