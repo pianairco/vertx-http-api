@@ -49,9 +49,7 @@ public class HttpTest {
         JsonTarget request = jsonParser.fromBytes(contentAsByteArray,
                 null, true);
 
-
-
-        CompletableFuture<HttpResponse<Buffer>> f = webClient.post(8080, "localhost", "/api/test/post")
+        CompletableFuture<HttpResponse<Buffer>> f = webClient.post("/api/test/post")
                 .sendJson(request.getJsonObject())
                 .toCompletionStage().toCompletableFuture().whenComplete((res, thr) -> {
                     if (thr == null) {
@@ -64,7 +62,5 @@ public class HttpTest {
                 });
 
         f.join();
-
-
     }
 }

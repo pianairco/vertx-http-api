@@ -1,6 +1,7 @@
 ir.piana.dev.common.vertx:
   router:
-    items:
+    server-name: default
+    routes:
       - method: get
         path: api/test/get
         handler-class: ir.piana.dev.common.handlers.GetHandler
@@ -12,7 +13,3 @@ ir.piana.dev.common.vertx:
       - method: get
         path: ready
         response: '{"status": "up", "time": "12:00:00"}'
-  http-server:
-    host: ${HTTP_SERVER_HOST:localhost}
-    port: ${HTTP_SERVER_PORT:8080}
-    idle-timeout: ${HTTP_SERVER_IDLE_TIMEOUT:10}
