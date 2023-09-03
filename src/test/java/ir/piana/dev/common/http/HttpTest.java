@@ -63,4 +63,31 @@ public class HttpTest {
 
         f.join();
     }
+
+    @Test
+    void ErrorHandlerTest(@Value("classpath:post-test.json") Resource resource) throws InterruptedException {
+        byte[] contentAsByteArray = null;
+        try {
+            contentAsByteArray = resource.getContentAsString(Charset.forName("utf-8")).getBytes("utf-8");
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+
+        JsonTarget request = jsonParser.fromBytes(contentAsByteArray,
+                null, true);
+
+        CompletableFuture<HttpResponse<Buffer>> f = webClient.post("/api/test/error")
+                .sendJson(request.getJsonObject())
+                .toCompletionStage().toCompletableFuture().whenComplete((res, thr) -> {
+                    if (thr == null) {
+                        System.out.println(res.statusCode());
+                        System.out.println(res.bodyAsString());
+                    } else {
+                        thr.printStackTrace();
+                        System.out.println(thr.getMessage());
+                    }
+                });
+
+        f.join();
+    }
 }

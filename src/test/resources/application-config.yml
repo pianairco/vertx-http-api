@@ -34,6 +34,11 @@ ir.piana.dev.common:
               handler-class: ir.piana.dev.common.handlers.PostHandler
               dto-type: ir.piana.dev.common.handlers.PostHandler$Request
               response-type: application/json
+            - method: post
+              path: api/test/error
+              handler-class: ir.piana.dev.common.handlers.ErrorHandler
+              dto-type: ir.piana.dev.common.handlers.ErrorHandler$Request
+              response-type: application/json
             - method: get
               path: ready
               response: '{"status": "up", "time": "12:00:00"}'

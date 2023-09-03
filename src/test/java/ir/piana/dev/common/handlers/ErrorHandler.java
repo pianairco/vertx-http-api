@@ -12,9 +12,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 
 @Handler
-public class PostHandler extends BaseRequestHandler<PostHandler.Request> {
-    @Autowired
-    private HandlerResponseBuilder handlerResponseBuilder;
+public class ErrorHandler extends BaseRequestHandler<ErrorHandler.Request> {
 
     @Autowired
     private JsonParser jsonParser;
@@ -31,23 +29,31 @@ public class PostHandler extends BaseRequestHandler<PostHandler.Request> {
     @Autowired
     private HandlerResponseBuilder responseBuilder;
 
-    protected PostHandler(
-            ContextLoggerProvider contextLoggerProvider,
-            HandlerRuntimeExceptionThrower handlerExceptionThrower) {
-        super(contextLoggerProvider, handlerExceptionThrower);
+    public ErrorHandler(ContextLoggerProvider contextLoggerProvider, HandlerRuntimeExceptionThrower thrower) {
+        super(contextLoggerProvider, thrower);
     }
 
     @ChainStep(order = 1)
 //    @Transactional(propagation = Propagation.REQUIRED)
     public void step1(HandlerRequest <Request> handlerRequest, HandlerInterStateTransporter transporter) {
-        contextLogger.info(handlerRequest.getJsonTarget().asString("message"));
-        System.out.println(handlerRequest.getJsonTarget().asString("message"));
+        contextLogger.info("server name {}", 1);
     }
 
     @ChainStep(order = 2)
     public void step2(HandlerRequest<Request> handlerRequest, HandlerInterStateTransporter transporter) {
-        System.out.println();
+        contextLogger.info("server name {}", 2);
+        contextLogger.info("server name {}", 3);
+        handlerRuntimeExceptionThrower.proceed(HandlerErrorType.INVALID_ARGUMENT.generateDetailedError(
+                "no.message", 1
+        ));
     }
+
+    @AssignedRollback(matchedOrder = 1, order = 1)
+    public void rollback1(HandlerRequest<Request> handlerRequest, HandlerInterStateTransporter transporter) {
+        contextLogger.info("rollback name {}", 1);
+    }
+
+
 
     @Override
     public HandlerResponse provideResponse(

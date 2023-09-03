@@ -31,7 +31,11 @@ public class VertxHttpClientAutoConfiguration {
             ConfigurableBeanFactory beanFactory) {
         List<WebClient> list = new ArrayList<>();
         Map<String, WebClient> map = new LinkedHashMap<>();
+        if(providers == null)
+            return null;
         for (WebClientProvider provider : providers) {
+            if(provider.webClients() == null)
+                continue;
             for (HttpClientItem item : provider.webClients()) {
                 StringBuilder key = new StringBuilder(item.isSsl() ? "https://" : "http://")
                         .append(item.getHost()).append(":").append(item.getPort());
@@ -59,14 +63,6 @@ public class VertxHttpClientAutoConfiguration {
             }
         }
 
-        return list.get(0);
+        return list.isEmpty() ? null : list.get(0);
     }
-
-    /*@Setter
-    @Component
-    @ConfigurationProperties(prefix = "ir.piana.dev.common.vertx.http-client")
-    @Profile("vertx-http-client")
-    static class VertxHttpClient {
-        private List<VertxHttpClientItem> items;
-    }*/
 }

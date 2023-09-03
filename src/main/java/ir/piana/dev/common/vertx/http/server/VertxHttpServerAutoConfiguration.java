@@ -10,10 +10,14 @@ import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
 import ir.piana.dev.common.handler.*;
 import ir.piana.dev.common.http.server.*;
+import ir.piana.dev.common.util.MapStrings;
 import ir.piana.dev.common.vertx.VertxAutoConfiguration;
+import ir.piana.dev.common.vertx.http.HandlerStatusNatureToHttpStatusConverter;
 import ir.piana.dev.jsonparser.json.JsonParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.MessageSource;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
@@ -27,11 +31,19 @@ import java.util.*;
 public class VertxHttpServerAutoConfiguration {
     private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
+    @Autowired
+    private HandlerRequestBuilder handlerRequestBuilder;
+
     @Bean
     @Profile("vertx-http-server")
     Map<String, Class> vertxHandlerClassMap(List<WebRouterProvider> routerProviders) throws ClassNotFoundException {
         Map<String, Class> map = new LinkedHashMap<>();
+
+        if (routerProviders == null)
+            return map;
         for (WebRouterProvider provider : routerProviders) {
+            if (provider.webRouters() == null)
+                continue;
             for (HttpRouterItem router : provider.webRouters()) {
                 for (HttpRouteItem item : router.getRoutes()) {
                     if (item.getResponse() == null && !map.containsKey(item.getHandlerClass()))
@@ -47,7 +59,11 @@ public class VertxHttpServerAutoConfiguration {
     Map<String, Class> vertxDtoClassMap(List<WebRouterProvider> routerProviders) throws ClassNotFoundException {
         Map<String, Class> map = new LinkedHashMap<>();
 
+        if (routerProviders == null)
+            return map;
         for (WebRouterProvider provider : routerProviders) {
+            if (provider.webRouters() == null)
+                continue;
             for (HttpRouterItem router : provider.webRouters()) {
                 for (HttpRouteItem item : router.getRoutes()) {
                     HttpMethod httpMethod = HttpMethod.valueOf(item.getMethod().trim().toUpperCase());
@@ -66,15 +82,20 @@ public class VertxHttpServerAutoConfiguration {
     @Bean
     @Profile("vertx-http-server")
     Map<String, Router> router(Vertx vertx, List<WebRouterProvider> routeProviders,
-                  JsonParser jsonParser,
-                  HandlerManager handlerManager,
-                  Map<String, Class> vertxHandlerClassMap,
-                  Map<String, Class> vertxDtoClassMap) {
+                               JsonParser jsonParser,
+                               HandlerRequestBuilder handlerRequestBuilder,
+                               HandlerManager handlerManager,
+                               Map<String, Class> vertxHandlerClassMap,
+                               Map<String, Class> vertxDtoClassMap,
+                               MessageSource messageSource) {
         Map<String, Router> routerMap = new LinkedHashMap<>();
-
+        if (routeProviders == null)
+            return routerMap;
         for (WebRouterProvider provider : routeProviders) {
+            if (provider.webRouters() == null)
+                continue;
             for (HttpRouterItem router : provider.webRouters()) {
-                if(!routerMap.containsKey(router.getServerName()) && router.getRoutes().size() > 0) {
+                if (!routerMap.containsKey(router.getServerName()) && router.getRoutes().size() > 0) {
                     routerMap.put(router.getServerName(), Router.router(vertx));
                 }
                 Router vertxRouter = routerMap.get(router.getServerName());
@@ -91,9 +112,9 @@ public class VertxHttpServerAutoConfiguration {
                                 .handler(routingContext -> {
                                     try {
                                         if (httpMethod == HttpMethod.POST || httpMethod == HttpMethod.PUT) {
-                                            routingContext.request().bodyHandler(bodyHandler -> {
+                                            routingContext.request().bodyHandler(bodyBuffer -> {
                                                 try {
-                                                    if (item.getDtoType() != null && bodyHandler.length() == 0) {
+                                                    if (item.getDtoType() != null && bodyBuffer.length() == 0) {
                                                         throw new RuntimeException("request body required");
                                                     }
                                                     /**
@@ -101,25 +122,27 @@ public class VertxHttpServerAutoConfiguration {
                                                      */
                                                     handle(item, handlerManager, vertxHandlerClassMap,
                                                             routingContext,
-                                                            HandlerRequestBuilder.fromBuffer(jsonParser, bodyHandler,
-                                                                            vertxDtoClassMap.get(item.getDtoType()))
-                                                                    .addAdditionalParams(routingContext.request().params())
-                                                                    .build());
+                                                            handlerRequestBuilder.fromBuffer(bodyBuffer,
+                                                                    vertxDtoClassMap.get(item.getDtoType()),
+                                                                    MapStrings.toConsume()
+                                                                            .putAll(routingContext.request().params())
+                                                                            .build(), ""), messageSource);
                                                 } catch (Exception exception) {
                                                     logger.error(exception.getMessage());
-                                                    error(routingContext.response(), exception);
+                                                    error(routingContext.response(), messageSource, exception);
                                                 }
                                             });
                                         } else {
                                             handle(item, handlerManager, vertxHandlerClassMap,
                                                     routingContext,
-                                                    HandlerRequestBuilder.withoutRequest()
-                                                            .addAdditionalParams(routingContext.queryParams())
-                                                            .build());
+                                                    handlerRequestBuilder.withoutBody()
+                                                            .setAdditionalParam(mapStrings -> routingContext.queryParams())
+                                                            .setAuthPhrase("")
+                                                            .build(), messageSource);
                                         }
                                     } catch (Throwable exception) {
                                         logger.error(exception.getMessage());
-                                        error(routingContext.response(), exception);
+                                        error(routingContext.response(), messageSource, exception);
                                     }
                                 });
                     }
@@ -134,70 +157,56 @@ public class VertxHttpServerAutoConfiguration {
             HttpRouteItem item,
             HandlerManager handlerManager,
             Map<String, Class> handlerClassMap,
-            RoutingContext routingContext, HandlerRequest handlerRequest) {
+            RoutingContext routingContext,
+            HandlerRequest handlerRequest,
+            MessageSource messageSource) {
         try {
-            DeferredResult<HandlerContext<?>> deferredResult = handlerManager.execute(
-                    handlerClassMap.get(item.getHandlerClass()), UUID.randomUUID().toString(), handlerRequest);
+            DeferredResult<HandlerResponse<Object>> deferredResult = handlerManager.execute(
+                    handlerClassMap.get(item.getHandlerClass()), handlerRequest);
 
-            deferredResult.setResultHandler(ctx -> {
-                HandlerContext handlerContext = (HandlerContext) ctx;
-                ResultDto resultDto = handlerContext.resultDto();
-                if (resultDto.isSuccess()) {
-                    ok(routingContext.response(), handlerContext, item);
-                } else {
-                    error(routingContext.response(), handlerContext);
-                }
-            });
+            deferredResult.setResultHandler(handlerResponse -> ok(routingContext.response(), (HandlerResponse) handlerResponse, item));
 
             deferredResult.onError(throwable -> {
-                error(routingContext.response(), throwable);
+                error(routingContext.response(), messageSource, throwable);
             });
         } catch (Exception exception) {
             logger.error(exception.getMessage());
-            error(routingContext.response(), exception);
+            error(routingContext.response(), messageSource, exception);
         }
     }
 
-    private void ok(HttpServerResponse response, HandlerContext context, HttpRouteItem item) {
-        if (context.responded()) {
-            logger.error("Already sent response!");
-            return;
-        }
-
-        var json = JsonObject.mapFrom(context.resultDto());
+    private void ok(HttpServerResponse response, HandlerResponse handlerResponse, HttpRouteItem item) {
+        var json = JsonObject.mapFrom(handlerResponse.getDto());
         response.setStatusCode(HttpURLConnection.HTTP_OK)
                 .putHeader("content-type", Optional.ofNullable(item.getResponseType()).orElse("application/json"))
-                .end(json.toBuffer());
+                .end(handlerResponse.getBuffer());
     }
 
-    private void error(HttpServerResponse response, HandlerContext context) {
-        if (context == null)
-            response.setStatusCode(HttpURLConnection.HTTP_INTERNAL_ERROR).end(JsonObject.mapFrom(
-                            new DetailedError(-1, "unhandled error!", DetailedError.ErrorTypes.UNKNOWN))
-                    .toBuffer());
-        else {
-            if (context.responded()) {
-                logger.error("Already sent response!");
-                return;
-            }
-            response.setStatusCode(HttpURLConnection.HTTP_BAD_REQUEST).end(JsonObject.mapFrom(context.resultDto())
-                    .toBuffer());
-        }
-    }
-
-    private void error(HttpServerResponse response, Throwable throwable) {
+    private void error(HttpServerResponse response, MessageSource messageSource, Throwable throwable) {
+        HandlerDetailedError.ThrowableError throwableError = null;
+        int httpStatus = 500;
         if (throwable instanceof HandlerRuntimeException) {
-            HandlerContext context = ((HandlerRuntimeException) throwable).getContext();
-            if (context.responded()) {
+            HandlerDetailedError detailedError = ((HandlerRuntimeException) throwable).getDetailedError();
+            if (((HandlerRuntimeException) throwable).isResponded()) {
                 logger.error("Already sent response!");
                 return;
             }
-            response.setStatusCode(400).end(
-                    JsonObject.mapFrom(context.resultDto()).toBuffer());
+            try {
+                throwableError = detailedError.toThrowableError(messageSource);
+                httpStatus = HandlerStatusNatureToHttpStatusConverter.toHttpStatus(
+                        detailedError.getErrorType().getHandlerStatusNature());
+            } catch (Exception e) {
+                throwableError = HandlerErrorType.UNKNOWN.generateDetailedError(
+                        "error occurred on translate message!")
+                        .toThrowableError(messageSource);
+            }
         } else {
-            response.setStatusCode(400).end(JsonObject.mapFrom(new DetailedError(
-                    -1, "unhandled error!", DetailedError.ErrorTypes.UNKNOWN)).toBuffer());
+            throwableError = HandlerErrorType.UNKNOWN.generateDetailedError("unknown error!")
+                    .toThrowableError(messageSource);
         }
+
+        response.setStatusCode(httpStatus)
+                .end(JsonObject.mapFrom(throwableError).toBuffer());
     }
 
     @Bean
@@ -207,7 +216,11 @@ public class VertxHttpServerAutoConfiguration {
             List<WebServerProvider> serverProviders) {
         Map<String, HttpServer> httpServerMap = new LinkedHashMap<>();
         Map<String, HttpServerItem> serverConfMap = new LinkedHashMap<>();
+        if (serverProviders == null)
+            return httpServerMap;
         for (WebServerProvider provider : serverProviders) {
+            if (provider.webServers() == null)
+                continue;
             for (HttpServerItem server : provider.webServers()) {
                 HttpServer httpServer = null;
                 if (!httpServerMap.containsKey(server.getName()) && serverConfMap.entrySet().stream().noneMatch(entry ->
@@ -225,10 +238,11 @@ public class VertxHttpServerAutoConfiguration {
                 }
                 Router vertxRouter = routerMap.get(server.getName());
 
-                var cause = httpServer.requestHandler(vertxRouter).listen().cause();
-                if (cause != null)
-                    throw new RuntimeException(cause.getMessage());
-
+                if (vertxRouter != null) {
+                    var cause = httpServer.requestHandler(vertxRouter).listen().cause();
+                    if (cause != null)
+                        throw new RuntimeException(cause.getMessage());
+                }
                 logger.info("Successfully started HTTP server and listening on {}:{} with native transport {}",
                         server.getHost(), server.getPort(),
                         vertx.isNativeTransportEnabled() ? "enabled" : "not enabled");
@@ -247,8 +261,8 @@ public class VertxHttpServerAutoConfiguration {
         private String host;
         private int port;
         *//**
-         * in seconds
-         *//*
+     * in seconds
+     *//*
         private int idleTimeout;
     }*/
 
