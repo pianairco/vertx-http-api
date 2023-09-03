@@ -16,7 +16,6 @@ import ir.piana.dev.common.vertx.http.HandlerStatusNatureToHttpStatusConverter;
 import ir.piana.dev.jsonparser.json.JsonParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.MessageSource;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -24,15 +23,15 @@ import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Profile;
 
 import java.net.HttpURLConnection;
-import java.util.*;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 @Configuration
 @Import(VertxAutoConfiguration.class)
 public class VertxHttpServerAutoConfiguration {
     private final Logger logger = LoggerFactory.getLogger(this.getClass());
-
-    @Autowired
-    private HandlerRequestBuilder handlerRequestBuilder;
 
     @Bean
     @Profile("vertx-http-server")
