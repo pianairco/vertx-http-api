@@ -9,7 +9,7 @@ import ir.piana.dev.common.http.client.mock.MockHttpResponse;
 
 import java.util.List;
 
-public class MockHttpResponseImpl<T> implements HttpResponse<T> {
+public class MockHttpResponseImpl implements HttpResponse<Buffer> {
 
     private final MockHttpResponse httpResponse;
 
@@ -58,13 +58,13 @@ public class MockHttpResponseImpl<T> implements HttpResponse<T> {
     }
 
     @Override
-    public T body() {
-        return (T) httpResponse.getBody();
+    public Buffer body() {
+        return httpResponse.getBodyAsBuffer();
     }
 
     @Override
     public Buffer bodyAsBuffer() {
-        return Buffer.buffer(httpResponse.getBody().getBytes());
+        return httpResponse.getBodyAsBuffer();
     }
 
     @Override

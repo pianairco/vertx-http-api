@@ -3,14 +3,12 @@ package ir.piana.dev.common.vertx.http.client;
 import io.vertx.core.*;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.HttpMethod;
-import io.vertx.core.http.HttpVersion;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.net.ProxyOptions;
 import io.vertx.core.streams.ReadStream;
 import io.vertx.ext.auth.authentication.Credentials;
 import io.vertx.ext.web.client.HttpRequest;
 import io.vertx.ext.web.client.HttpResponse;
-import io.vertx.ext.web.client.impl.HttpResponseImpl;
 import io.vertx.ext.web.client.predicate.ResponsePredicate;
 import io.vertx.ext.web.codec.BodyCodec;
 import io.vertx.ext.web.multipart.MultipartForm;
@@ -20,7 +18,7 @@ import ir.piana.dev.common.http.client.mock.MockHttpResponse;
 import java.util.List;
 import java.util.Map;
 
-public class MockHttpRequest<T> implements HttpRequest<T> {
+public class MockHttpRequest implements HttpRequest<Buffer> {
     private MockHttpResponse response;
 
     public MockHttpRequest(MockHttpResponse response) {
@@ -28,7 +26,7 @@ public class MockHttpRequest<T> implements HttpRequest<T> {
     }
 
     @Override
-    public HttpRequest<T> method(HttpMethod value) {
+    public HttpRequest<Buffer> method(HttpMethod value) {
         return this;
     }
 
@@ -38,7 +36,7 @@ public class MockHttpRequest<T> implements HttpRequest<T> {
     }
 
     @Override
-    public HttpRequest<T> port(int value) {
+    public HttpRequest<Buffer> port(int value) {
         return this;
     }
 
@@ -53,12 +51,12 @@ public class MockHttpRequest<T> implements HttpRequest<T> {
     }
 
     @Override
-    public BodyCodec<T> bodyCodec() {
+    public BodyCodec<Buffer> bodyCodec() {
         return null;
     }
 
     @Override
-    public HttpRequest<T> host(String value) {
+    public HttpRequest<Buffer> host(String value) {
         return this;
     }
 
@@ -68,7 +66,7 @@ public class MockHttpRequest<T> implements HttpRequest<T> {
     }
 
     @Override
-    public HttpRequest<T> virtualHost(String value) {
+    public HttpRequest<Buffer> virtualHost(String value) {
         return this;
     }
 
@@ -78,7 +76,7 @@ public class MockHttpRequest<T> implements HttpRequest<T> {
     }
 
     @Override
-    public HttpRequest<T> uri(String value) {
+    public HttpRequest<Buffer> uri(String value) {
         return this;
     }
 
@@ -88,17 +86,17 @@ public class MockHttpRequest<T> implements HttpRequest<T> {
     }
 
     @Override
-    public HttpRequest<T> putHeaders(MultiMap headers) {
+    public HttpRequest<Buffer> putHeaders(MultiMap headers) {
         return this;
     }
 
     @Override
-    public HttpRequest<T> putHeader(String name, String value) {
+    public HttpRequest<Buffer> putHeader(String name, String value) {
         return this;
     }
 
     @Override
-    public HttpRequest<T> putHeader(String name, Iterable<String> value) {
+    public HttpRequest<Buffer> putHeader(String name, Iterable<String> value) {
         return this;
     }
 
@@ -108,12 +106,12 @@ public class MockHttpRequest<T> implements HttpRequest<T> {
     }
 
     @Override
-    public HttpRequest<T> authentication(Credentials credentials) {
+    public HttpRequest<Buffer> authentication(Credentials credentials) {
         return this;
     }
 
     @Override
-    public HttpRequest<T> ssl(Boolean value) {
+    public HttpRequest<Buffer> ssl(Boolean value) {
         return this;
     }
 
@@ -123,7 +121,7 @@ public class MockHttpRequest<T> implements HttpRequest<T> {
     }
 
     @Override
-    public HttpRequest<T> timeout(long value) {
+    public HttpRequest<Buffer> timeout(long value) {
         return this;
     }
 
@@ -133,32 +131,32 @@ public class MockHttpRequest<T> implements HttpRequest<T> {
     }
 
     @Override
-    public HttpRequest<T> addQueryParam(String paramName, String paramValue) {
+    public HttpRequest<Buffer> addQueryParam(String paramName, String paramValue) {
         return this;
     }
 
     @Override
-    public HttpRequest<T> setQueryParam(String paramName, String paramValue) {
+    public HttpRequest<Buffer> setQueryParam(String paramName, String paramValue) {
         return this;
     }
 
     @Override
-    public HttpRequest<T> setTemplateParam(String paramName, String paramValue) {
+    public HttpRequest<Buffer> setTemplateParam(String paramName, String paramValue) {
         return this;
     }
 
     @Override
-    public HttpRequest<T> setTemplateParam(String paramName, List<String> paramValue) {
+    public HttpRequest<Buffer> setTemplateParam(String paramName, List<String> paramValue) {
         return this;
     }
 
     @Override
-    public HttpRequest<T> setTemplateParam(String paramName, Map<String, String> paramValue) {
+    public HttpRequest<Buffer> setTemplateParam(String paramName, Map<String, String> paramValue) {
         return this;
     }
 
     @Override
-    public HttpRequest<T> followRedirects(boolean value) {
+    public HttpRequest<Buffer> followRedirects(boolean value) {
         return this;
     }
 
@@ -168,7 +166,7 @@ public class MockHttpRequest<T> implements HttpRequest<T> {
     }
 
     @Override
-    public HttpRequest<T> proxy(ProxyOptions proxyOptions) {
+    public HttpRequest<Buffer> proxy(ProxyOptions proxyOptions) {
         return this;
     }
 
@@ -178,7 +176,7 @@ public class MockHttpRequest<T> implements HttpRequest<T> {
     }
 
     @Override
-    public HttpRequest<T> expect(ResponsePredicate predicate) {
+    public HttpRequest<Buffer> expect(ResponsePredicate predicate) {
         return this;
     }
 
@@ -198,12 +196,12 @@ public class MockHttpRequest<T> implements HttpRequest<T> {
     }
 
     @Override
-    public HttpRequest<T> copy() {
+    public HttpRequest<Buffer> copy() {
         return this;
     }
 
     @Override
-    public HttpRequest<T> multipartMixed(boolean allow) {
+    public HttpRequest<Buffer> multipartMixed(boolean allow) {
         return this;
     }
 
@@ -213,7 +211,7 @@ public class MockHttpRequest<T> implements HttpRequest<T> {
     }
 
     @Override
-    public HttpRequest<T> traceOperation(String traceOperation) {
+    public HttpRequest<Buffer> traceOperation(String traceOperation) {
         return this;
     }
 
@@ -223,96 +221,96 @@ public class MockHttpRequest<T> implements HttpRequest<T> {
     }
 
     @Override
-    public void sendStream(ReadStream<Buffer> body, Handler<AsyncResult<HttpResponse<T>>> handler) {
+    public void sendStream(ReadStream<Buffer> body, Handler<AsyncResult<HttpResponse<Buffer>>> handler) {
 
     }
 
     @Override
-    public Future<HttpResponse<T>> sendStream(ReadStream<Buffer> body) {
-        Promise<HttpResponse<T>> promise = Promise.promise();
-        promise.complete(new MockHttpResponseImpl<>(response));
+    public Future<HttpResponse<Buffer>> sendStream(ReadStream<Buffer> body) {
+        Promise<HttpResponse<Buffer>> promise = Promise.promise();
+        promise.complete(new MockHttpResponseImpl(response));
         return promise.future();
     }
 
     @Override
-    public void sendBuffer(Buffer body, Handler<AsyncResult<HttpResponse<T>>> handler) {
+    public void sendBuffer(Buffer body, Handler<AsyncResult<HttpResponse<Buffer>>> handler) {
 
     }
 
     @Override
-    public Future<HttpResponse<T>> sendBuffer(Buffer body) {
-        Promise<HttpResponse<T>> promise = Promise.promise();
-        promise.complete(new MockHttpResponseImpl<>(response));
+    public Future<HttpResponse<Buffer>> sendBuffer(Buffer body) {
+        Promise<HttpResponse<Buffer>> promise = Promise.promise();
+        promise.complete(new MockHttpResponseImpl(response));
         return promise.future();
     }
 
     @Override
-    public void sendJsonObject(JsonObject body, Handler<AsyncResult<HttpResponse<T>>> handler) {
+    public void sendJsonObject(JsonObject body, Handler<AsyncResult<HttpResponse<Buffer>>> handler) {
 
     }
 
     @Override
-    public Future<HttpResponse<T>> sendJsonObject(JsonObject body) {
-        Promise<HttpResponse<T>> promise = Promise.promise();
-        promise.complete(new MockHttpResponseImpl<>(response));
+    public Future<HttpResponse<Buffer>> sendJsonObject(JsonObject body) {
+        Promise<HttpResponse<Buffer>> promise = Promise.promise();
+        promise.complete(new MockHttpResponseImpl(response));
         return promise.future();
     }
 
     @Override
-    public void sendJson(Object body, Handler<AsyncResult<HttpResponse<T>>> handler) {
+    public void sendJson(Object body, Handler<AsyncResult<HttpResponse<Buffer>>> handler) {
 
     }
 
     @Override
-    public Future<HttpResponse<T>> sendJson(Object body) {
-        Promise<HttpResponse<T>> promise = Promise.promise();
-        promise.complete(new MockHttpResponseImpl<>(response));
+    public Future<HttpResponse<Buffer>> sendJson(Object body) {
+        Promise<HttpResponse<Buffer>> promise = Promise.promise();
+        promise.complete(new MockHttpResponseImpl(response));
         return promise.future();
     }
 
     @Override
-    public void sendForm(MultiMap body, Handler<AsyncResult<HttpResponse<T>>> handler) {
+    public void sendForm(MultiMap body, Handler<AsyncResult<HttpResponse<Buffer>>> handler) {
 
     }
 
-    public Future<HttpResponse<T>> sendForm(MultiMap body) {
-        Promise<HttpResponse<T>> promise = Promise.promise();
-        promise.complete(new MockHttpResponseImpl<>(response));
+    public Future<HttpResponse<Buffer>> sendForm(MultiMap body) {
+        Promise<HttpResponse<Buffer>> promise = Promise.promise();
+        promise.complete(new MockHttpResponseImpl(response));
         return promise.future();
     }
 
     @Override
-    public void sendForm(MultiMap body, String charset, Handler<AsyncResult<HttpResponse<T>>> handler) {
+    public void sendForm(MultiMap body, String charset, Handler<AsyncResult<HttpResponse<Buffer>>> handler) {
 
     }
 
     @Override
-    public Future<HttpResponse<T>> sendForm(MultiMap body, String charset) {
-        Promise<HttpResponse<T>> promise = Promise.promise();
-        promise.complete(new MockHttpResponseImpl<>(response));
+    public Future<HttpResponse<Buffer>> sendForm(MultiMap body, String charset) {
+        Promise<HttpResponse<Buffer>> promise = Promise.promise();
+        promise.complete(new MockHttpResponseImpl(response));
         return promise.future();
     }
 
     @Override
-    public void sendMultipartForm(MultipartForm body, Handler<AsyncResult<HttpResponse<T>>> handler) {
+    public void sendMultipartForm(MultipartForm body, Handler<AsyncResult<HttpResponse<Buffer>>> handler) {
 
     }
 
-    public Future<HttpResponse<T>> sendMultipartForm(MultipartForm body) {
-        Promise<HttpResponse<T>> promise = Promise.promise();
-        promise.complete(new MockHttpResponseImpl<>(response));
+    public Future<HttpResponse<Buffer>> sendMultipartForm(MultipartForm body) {
+        Promise<HttpResponse<Buffer>> promise = Promise.promise();
+        promise.complete(new MockHttpResponseImpl(response));
         return promise.future();
     }
 
     @Override
-    public void send(Handler<AsyncResult<HttpResponse<T>>> handler) {
+    public void send(Handler<AsyncResult<HttpResponse<Buffer>>> handler) {
 
     }
 
     @Override
-    public Future<HttpResponse<T>> send() {
-        Promise<HttpResponse<T>> promise = Promise.promise();
-        promise.complete(new MockHttpResponseImpl<>(response));
+    public Future<HttpResponse<Buffer>> send() {
+        Promise<HttpResponse<Buffer>> promise = Promise.promise();
+        promise.complete(new MockHttpResponseImpl(response));
         return promise.future();
     }
 }
