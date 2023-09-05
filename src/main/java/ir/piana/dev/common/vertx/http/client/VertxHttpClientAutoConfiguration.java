@@ -5,6 +5,10 @@ import io.vertx.ext.web.client.WebClient;
 import io.vertx.ext.web.client.WebClientOptions;
 import ir.piana.dev.common.http.client.HttpClientItem;
 import ir.piana.dev.common.http.client.WebClientProvider;
+import ir.piana.dev.common.http.client.mock.MockHttpItem;
+import ir.piana.dev.common.http.client.mock.MockHttpResponse;
+import ir.piana.dev.common.http.client.mock.MockRouteItem;
+import ir.piana.dev.common.http.client.mock.MockWebClientProvider;
 import ir.piana.dev.common.vertx.VertxAutoConfiguration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 
 @Configuration
+@Profile("vertx-http-client")
 @Import(VertxAutoConfiguration.class)
 public class VertxHttpClientAutoConfiguration {
     private final Logger logger = LoggerFactory.getLogger(this.getClass());
@@ -24,8 +29,28 @@ public class VertxHttpClientAutoConfiguration {
     @Bean
     @Primary
     @Profile("vertx-http-client")
-    public WebClient webClient(
+    public Map<String, Map<String, MockHttpResponse>> vertxMockHttpResponseMap(List<VertxMockWebClientProvider> mockProviders) {
+        Map<String, Map<String, MockHttpResponse>> httpResponseMap = new LinkedHashMap<>();
+        for (MockWebClientProvider mockProvider : mockProviders) {
+            for (MockHttpItem mock : mockProvider.mocks()) {
+                if (!httpResponseMap.containsKey(mock.getBeanName())) {
+                    httpResponseMap.put(mock.getBeanName(), new LinkedHashMap<>());
+                }
+                for (MockRouteItem mockRoute : mock.getMockRoutes()) {
+                    httpResponseMap.get(mock.getBeanName())
+                            .put("**" + mockRoute.getMethod().trim().toUpperCase() + "**" + mockRoute.getPath(), mockRoute.getResponse());
+                }
+            }
+        }
+        return httpResponseMap;
+    }
+
+    @Bean
+    @Primary
+    @Profile("vertx-http-client")
+    public WebClient vertxWebClient(
             List<WebClientProvider> providers,
+            Map<String, Map<String, MockHttpResponse>> vertxMockHttpResponseMap,
             Vertx vertx, /*VertxHttpClient httpClient,*/
             AnnotationConfigApplicationContext applicationContext,
             ConfigurableBeanFactory beanFactory) {
@@ -37,28 +62,34 @@ public class VertxHttpClientAutoConfiguration {
             if(provider.webClients() == null)
                 continue;
             for (HttpClientItem item : provider.webClients()) {
-                StringBuilder key = new StringBuilder(item.isSsl() ? "https://" : "http://")
-                        .append(item.getHost()).append(":").append(item.getPort());
-
-                if (!map.containsKey(key.toString())) {
-                    WebClient webClient = WebClient.create(vertx, new WebClientOptions()
-                            .setSsl(item.isSsl())
-                            .setMaxPoolSize(item.getMaxPoolSize())
-                            .setReusePort(Boolean.TRUE)
-                            .setTcpQuickAck(Boolean.TRUE)
-                            .setTcpCork(Boolean.TRUE)
-                            .setTcpFastOpen(Boolean.TRUE)
-                            .setDefaultHost(item.getHost())
-                            .setDefaultPort(item.getPort())
-                            .setConnectTimeout(10000)
-                            .setReadIdleTimeout(10000)
-                            .setSslHandshakeTimeout(10000));
-                    list.add(webClient);
-                    map.put(key.toString(), webClient);
-                    applicationContext.registerBean(item.getBeanName(), WebClient.class, () -> webClient);
+                if (vertxMockHttpResponseMap.containsKey(item.getBeanName())) {
+                    MockWebClient mockWebClient = new MockWebClient(vertxMockHttpResponseMap.get(item.getBeanName()));
+                    list.add(mockWebClient);
+                    applicationContext.registerBean(item.getBeanName(), WebClient.class, () -> mockWebClient);
                 } else {
-                    if (!applicationContext.containsBean(item.getBeanName()))
-                        applicationContext.registerBean(item.getBeanName(), WebClient.class, () -> map.get(item.getBeanName()));
+                    StringBuilder key = new StringBuilder(item.isSsl() ? "https://" : "http://")
+                            .append(item.getHost()).append(":").append(item.getPort());
+
+                    if (!map.containsKey(key.toString())) {
+                        WebClient webClient = WebClient.create(vertx, new WebClientOptions()
+                                .setSsl(item.isSsl())
+                                .setMaxPoolSize(item.getMaxPoolSize())
+                                .setReusePort(Boolean.TRUE)
+                                .setTcpQuickAck(Boolean.TRUE)
+                                .setTcpCork(Boolean.TRUE)
+                                .setTcpFastOpen(Boolean.TRUE)
+                                .setDefaultHost(item.getHost())
+                                .setDefaultPort(item.getPort())
+                                .setConnectTimeout(10000)
+                                .setReadIdleTimeout(10000)
+                                .setSslHandshakeTimeout(10000));
+                        list.add(webClient);
+                        map.put(key.toString(), webClient);
+                        applicationContext.registerBean(item.getBeanName(), WebClient.class, () -> webClient);
+                    } else {
+                        if (!applicationContext.containsBean(item.getBeanName()))
+                            applicationContext.registerBean(item.getBeanName(), WebClient.class, () -> map.get(item.getBeanName()));
+                    }
                 }
             }
         }

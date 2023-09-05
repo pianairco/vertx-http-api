@@ -160,7 +160,7 @@ public class VertxHttpServerAutoConfiguration {
             HandlerRequest handlerRequest,
             MessageSource messageSource) {
         try {
-            DeferredResult<HandlerResponse<Object>> deferredResult = handlerManager.execute(
+            DeferredResult<HandlerResponse> deferredResult = handlerManager.execute(
                     handlerClassMap.get(item.getHandlerClass()), handlerRequest);
 
             deferredResult.setResultHandler(handlerResponse -> ok(routingContext.response(), (HandlerResponse) handlerResponse, item));

@@ -16,6 +16,20 @@ ir.piana.dev.common:
           host: localhost
           port: 8080
           max-pool-size: ${HTTP_CLIENT_MAX_POOL_SIZE:20}
+        - bean-name: localWebClient
+          isSsl: false
+          host: localhost
+          port: 8080
+          max-pool-size: ${HTTP_CLIENT_MAX_POOL_SIZE:20}
+    mock-web-clients:
+      items:
+        - bean-name: authApWebClient
+          mock-routes:
+            - method: post
+              path: /connect/token
+              response:
+                status: 200
+                body: eyJhbGciOiJSUzI1NiIsImtpZCI6IjQ0M0I3MUI4QTJFMzMxRjUwODg2OEE5MEY3NjhCODUyIiwidHlwIjoiYXQrand0In0.eyJuYmYiOjE2ODkxNTEyMTksImV4cCI6MTY4OTE1NDgxOSwiaXNzIjoiaHR0cHM6Ly9hdXRoLmFzYW5wYXJkYWtodC5uZXQiLCJjbGllbnRfaWQiOiJqaWJpdF9tbXMiLCJwb3J0YWwtdXNlci1pZCI6IjEyODc2IiwiaWF0IjoxNjg5MTUxMjE5LCJzY29wZSI6WyJtbXNfYXBpX3Njb3BlIl19.aO8aURsIEySlEGrJNOukq1XCXkKiF0s3rZTOc0MnibIk-ikWutA2IABlz4_5rFDWWN-ehJk8SrjRKU0d9lK0OhEUgyJF6hG44m3xctaHjhgFBfuYadR44jSaP3uXhPqESBc_AlghlW04nihE5UsaHGmG1J49KXNgfDP27RSWRwmSrOrrFIj_pKYSVUcbEmCB1egsbeSZXVjbcvY2SRFPMqbsby3vhs4ToFYtWjFe8pGYO9Y3IPj3trR6wBDCyRwZIpA1Ij_EBSobq7Xw5Ql5AWhZg3NnSQPTF83YsC9Og1AmvXxgG8NSQL9LnrpbuHD55eA9tuP3bUD6eyX2CmhkAQ
     web-server:
       items:
         - name: default

@@ -4,10 +4,14 @@ import io.vertx.core.buffer.Buffer;
 import io.vertx.ext.web.client.HttpResponse;
 import io.vertx.ext.web.client.WebClient;
 import ir.piana.dev.common.context.PropertyOverrideContextInitializer;
+import ir.piana.dev.common.vertx.http.client.VertxHttpClientAutoConfiguration;
 import ir.piana.dev.jsonparser.json.JsonParser;
 import ir.piana.dev.jsonparser.json.JsonTarget;
 import org.junit.jupiter.api.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.ComponentScan;
@@ -24,9 +28,10 @@ import java.util.concurrent.CompletableFuture;
 @ContextConfiguration(initializers = PropertyOverrideContextInitializer.class)
 @Import(value = {HttpTest.TestConfig.class})
 public class HttpTest {
-
+    Logger logger = LoggerFactory.getLogger(this.getClass());
     @Configuration
     @ComponentScan("ir.piana.dev")
+    @Import(VertxHttpClientAutoConfiguration.class)
     static class TestConfig {
 
     }
@@ -35,6 +40,7 @@ public class HttpTest {
     private JsonParser jsonParser;
 
     @Autowired
+    @Qualifier("localWebClient")
     private WebClient webClient;
 
     @Test
@@ -53,11 +59,10 @@ public class HttpTest {
                 .sendJson(request.getJsonObject())
                 .toCompletionStage().toCompletableFuture().whenComplete((res, thr) -> {
                     if (thr == null) {
-                        System.out.println(res.statusCode());
-                        System.out.println(res.bodyAsString());
+                        logger.info(res.statusCode() + " : " + res.bodyAsString());
                     } else {
                         thr.printStackTrace();
-                        System.out.println(thr.getMessage());
+                        logger.error(thr.getMessage());
                     }
                 });
 
