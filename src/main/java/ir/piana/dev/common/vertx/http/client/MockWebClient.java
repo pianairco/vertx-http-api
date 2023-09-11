@@ -30,7 +30,7 @@ public class MockWebClient implements WebClient {
      * Use {@link SocketAddress#domainSocketAddress(String)} to connect to a unix domain socket server.
      */
     public HttpRequest<Buffer> request(HttpMethod method, SocketAddress serverAddress, int port, String host, String requestURI) {
-        return new MockHttpRequest(mockHttpResponseMap.getOrDefault(
+        return new MockVertxHttpRequest(mockHttpResponseMap.getOrDefault(
                 "**" + method + "**" + requestURI,
                 new MockHttpResponse(404, Buffer.buffer("not implemented mock!"), new LinkedHashMap<>())));
     }
@@ -44,7 +44,7 @@ public class MockWebClient implements WebClient {
      * Use {@link SocketAddress#domainSocketAddress(String)} to connect to a unix domain socket server.
      */
     public HttpRequest<Buffer> request(HttpMethod method, SocketAddress serverAddress, int port, String host, UriTemplate requestURI) {
-        return new MockHttpRequest(mockHttpResponseMap.getOrDefault("**" + method + "**" + requestURI.toString(),
+        return new MockVertxHttpRequest(mockHttpResponseMap.getOrDefault("**" + method + "**" + requestURI.toString(),
                 new MockHttpResponse(404, Buffer.buffer("not implemented mock!"), new LinkedHashMap<>())));
     }
 
@@ -57,7 +57,7 @@ public class MockWebClient implements WebClient {
      * Use {@link SocketAddress#domainSocketAddress(String)} to connect to a unix domain socket server.
      */
     public HttpRequest<Buffer> request(HttpMethod method, SocketAddress serverAddress, String host, String requestURI) {
-        return new MockHttpRequest(mockHttpResponseMap.getOrDefault("**" + method + "**" + requestURI,
+        return new MockVertxHttpRequest(mockHttpResponseMap.getOrDefault("**" + method + "**" + requestURI,
                 new MockHttpResponse(404, Buffer.buffer("not implemented mock!"), new LinkedHashMap<>())));
     }
 
@@ -70,7 +70,7 @@ public class MockWebClient implements WebClient {
      * Use {@link SocketAddress#domainSocketAddress(String)} to connect to a unix domain socket server.
      */
     public HttpRequest<Buffer> request(HttpMethod method, SocketAddress serverAddress, String host, UriTemplate requestURI) {
-        return new MockHttpRequest(mockHttpResponseMap.getOrDefault("**" + method + "**" + requestURI.toString(),
+        return new MockVertxHttpRequest(mockHttpResponseMap.getOrDefault("**" + method + "**" + requestURI.toString(),
                 new MockHttpResponse(404, Buffer.buffer("not implemented mock!"), new LinkedHashMap<>())));
     }
 
@@ -83,7 +83,7 @@ public class MockWebClient implements WebClient {
      * Use {@link SocketAddress#domainSocketAddress(String)} to connect to a unix domain socket server.
      */
     public HttpRequest<Buffer> request(HttpMethod method, SocketAddress serverAddress, String requestURI) {
-        return new MockHttpRequest(mockHttpResponseMap.getOrDefault("**" + method + "**" + requestURI,
+        return new MockVertxHttpRequest(mockHttpResponseMap.getOrDefault("**" + method + "**" + requestURI,
                 new MockHttpResponse(404, Buffer.buffer("not implemented mock!"), new LinkedHashMap<>())));
     }
 
@@ -96,7 +96,7 @@ public class MockWebClient implements WebClient {
      * Use {@link SocketAddress#domainSocketAddress(String)} to connect to a unix domain socket server.
      */
     public HttpRequest<Buffer> request(HttpMethod method, SocketAddress serverAddress, UriTemplate requestURI) {
-        return new MockHttpRequest(mockHttpResponseMap.getOrDefault("**" + method + "**" + requestURI.toString(),
+        return new MockVertxHttpRequest(mockHttpResponseMap.getOrDefault("**" + method + "**" + requestURI.toString(),
                 new MockHttpResponse(404, Buffer.buffer("not implemented mock!"), new LinkedHashMap<>())));
     }
 
@@ -109,7 +109,7 @@ public class MockWebClient implements WebClient {
      * Use {@link SocketAddress#domainSocketAddress(String)} to connect to a unix domain socket server.
      */
     public HttpRequest<Buffer> request(HttpMethod method, SocketAddress serverAddress, RequestOptions options) {
-        return new MockHttpRequest(mockHttpResponseMap.getOrDefault("**" + method + "**" + options.getURI(),
+        return new MockVertxHttpRequest(mockHttpResponseMap.getOrDefault("**" + method + "**" + options.getURI(),
                 new MockHttpResponse(404, Buffer.buffer("not implemented mock!"), new LinkedHashMap<>())));
     }
 
@@ -122,7 +122,7 @@ public class MockWebClient implements WebClient {
      * Use {@link SocketAddress#domainSocketAddress(String)} to connect to a unix domain socket server.
      */
     public HttpRequest<Buffer> requestAbs(HttpMethod method, SocketAddress serverAddress, String absoluteURI) {
-        return new MockHttpRequest(mockHttpResponseMap.getOrDefault("**" + method + "**" + parse(absoluteURI),
+        return new MockVertxHttpRequest(mockHttpResponseMap.getOrDefault("**" + method + "**" + parse(absoluteURI),
                 new MockHttpResponse(404, Buffer.buffer("not implemented mock!"), new LinkedHashMap<>())));
     }
 
@@ -143,7 +143,7 @@ public class MockWebClient implements WebClient {
      * Use {@link SocketAddress#domainSocketAddress(String)} to connect to a unix domain socket server.
      */
     public HttpRequest<Buffer> requestAbs(HttpMethod method, SocketAddress serverAddress, UriTemplate absoluteURI) {
-        return new MockHttpRequest(mockHttpResponseMap.getOrDefault("**" + method + "**" + absoluteURI.toString(),
+        return new MockVertxHttpRequest(mockHttpResponseMap.getOrDefault("**" + method + "**" + absoluteURI.toString(),
                 new MockHttpResponse(404, Buffer.buffer("not implemented mock!"), new LinkedHashMap<>())));
     }
 

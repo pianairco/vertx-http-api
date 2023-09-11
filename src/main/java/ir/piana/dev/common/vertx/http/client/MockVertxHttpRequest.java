@@ -18,10 +18,10 @@ import ir.piana.dev.common.http.client.mock.MockHttpResponse;
 import java.util.List;
 import java.util.Map;
 
-public class MockHttpRequest implements HttpRequest<Buffer> {
+public class MockVertxHttpRequest implements HttpRequest<Buffer> {
     private MockHttpResponse response;
 
-    public MockHttpRequest(MockHttpResponse response) {
+    public MockVertxHttpRequest(MockHttpResponse response) {
         this.response = response;
     }
 
