@@ -18,7 +18,7 @@ import java.util.concurrent.CompletableFuture;
 
 @Handler
 //@DependsOn("authApWebClient")
-public class PostHandler extends BaseRequestHandler<PostHandler.Request> {
+public class PostHandler extends BaseRequestHandler<PostHandler.Request, PostHandler.Response> {
     @Autowired
     private HandlerResponseBuilder handlerResponseBuilder;
 
@@ -68,7 +68,7 @@ public class PostHandler extends BaseRequestHandler<PostHandler.Request> {
     }
 
     @Override
-    public HandlerResponse provideResponse(
+    public HandlerResponse<Response> provideResponse(
             HandlerRequest<Request> handlerRequest,
             HandlerInterStateTransporter transporter) {
         return responseBuilder.fromDto(new Response(

@@ -4,4 +4,4 @@ logging:
 spring:
   locale: fa
   profiles:
-    active: config, vertx-http-server, vertx-http-client
+    active: config, vertx-http-server, vertx-http-client, handler-config

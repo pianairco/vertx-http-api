@@ -11,7 +11,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 
 @Handler
-public class ErrorHandler extends BaseRequestHandler<ErrorHandler.Request> {
+public class ErrorHandler extends BaseRequestHandler<ErrorHandler.Request, ErrorHandler.Response> {
 
     @Autowired
     private JsonParser jsonParser;
@@ -57,7 +57,7 @@ public class ErrorHandler extends BaseRequestHandler<ErrorHandler.Request> {
 
 
     @Override
-    public HandlerResponse provideResponse(
+    public HandlerResponse<Response> provideResponse(
             HandlerRequest<Request> handlerRequest,
             HandlerInterStateTransporter transporter) {
         return responseBuilder.fromDto(new Response(

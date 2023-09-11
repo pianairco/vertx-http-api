@@ -1,0 +1,6 @@
+handler-config:
+  configs:
+    staticResourceHandlerConfig:
+      key1: "val1"
+      key2: 12
+      key3: true

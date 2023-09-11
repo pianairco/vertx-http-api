@@ -9,9 +9,12 @@ import ir.piana.dev.common.http.client.mock.MockHttpItem;
 import ir.piana.dev.common.http.client.mock.MockHttpResponse;
 import ir.piana.dev.common.http.client.mock.MockRouteItem;
 import ir.piana.dev.common.http.client.mock.MockWebClientProvider;
+import ir.piana.dev.common.service.HandlerConfigProvider;
+import ir.piana.dev.common.util.MapAny;
 import ir.piana.dev.common.vertx.VertxAutoConfiguration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.config.ConfigurableBeanFactory;
 import org.springframework.context.annotation.*;
 
@@ -22,14 +25,15 @@ import java.util.Map;
 
 @Configuration
 @Profile("vertx-http-client")
-@Import(VertxAutoConfiguration.class)
+@DependsOn("mapAnyMap")
 public class VertxHttpClientAutoConfiguration {
     private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
     @Bean
     @Primary
     @Profile("vertx-http-client")
-    public Map<String, Map<String, MockHttpResponse>> vertxMockHttpResponseMap(List<VertxMockWebClientProvider> mockProviders) {
+    public Map<String, Map<String, MockHttpResponse>> vertxMockHttpResponseMap(
+            List<VertxMockWebClientProvider> mockProviders) {
         Map<String, Map<String, MockHttpResponse>> httpResponseMap = new LinkedHashMap<>();
         for (MockWebClientProvider mockProvider : mockProviders) {
             for (MockHttpItem mock : mockProvider.mocks()) {
@@ -49,7 +53,7 @@ public class VertxHttpClientAutoConfiguration {
     @Primary
     @Profile("vertx-http-client")
     public WebClient vertxWebClient(
-            List<WebClientProvider> providers,
+            List<VertxWebClientProvider> providers,
             Map<String, Map<String, MockHttpResponse>> vertxMockHttpResponseMap,
             Vertx vertx, /*VertxHttpClient httpClient,*/
             AnnotationConfigApplicationContext applicationContext,

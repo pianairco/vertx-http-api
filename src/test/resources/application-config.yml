@@ -30,16 +30,29 @@ ir.piana.dev.common:
               response:
                 status: 200
                 body: eyJhbGciOiJSUzI1NiIsImtpZCI6IjQ0M0I3MUI4QTJFMzMxRjUwODg2OEE5MEY3NjhCODUyIiwidHlwIjoiYXQrand0In0.eyJuYmYiOjE2ODkxNTEyMTksImV4cCI6MTY4OTE1NDgxOSwiaXNzIjoiaHR0cHM6Ly9hdXRoLmFzYW5wYXJkYWtodC5uZXQiLCJjbGllbnRfaWQiOiJqaWJpdF9tbXMiLCJwb3J0YWwtdXNlci1pZCI6IjEyODc2IiwiaWF0IjoxNjg5MTUxMjE5LCJzY29wZSI6WyJtbXNfYXBpX3Njb3BlIl19.aO8aURsIEySlEGrJNOukq1XCXkKiF0s3rZTOc0MnibIk-ikWutA2IABlz4_5rFDWWN-ehJk8SrjRKU0d9lK0OhEUgyJF6hG44m3xctaHjhgFBfuYadR44jSaP3uXhPqESBc_AlghlW04nihE5UsaHGmG1J49KXNgfDP27RSWRwmSrOrrFIj_pKYSVUcbEmCB1egsbeSZXVjbcvY2SRFPMqbsby3vhs4ToFYtWjFe8pGYO9Y3IPj3trR6wBDCyRwZIpA1Ij_EBSobq7Xw5Ql5AWhZg3NnSQPTF83YsC9Og1AmvXxgG8NSQL9LnrpbuHD55eA9tuP3bUD6eyX2CmhkAQ
+    template-engines:
+      items:
+        - name: thymeleaf
+          dir: web-ui
+          postfix: html
     web-server:
       items:
         - name: default
           host: ${HTTP_SERVER_HOST:localhost}
           port: ${HTTP_SERVER_PORT:8080}
           idle-timeout: ${HTTP_SERVER_IDLE_TIMEOUT:10}
+          specific-configs:
+            static-resource-base-path: web-ui
+            static-resource-dir: webroot
     web-router:
       items:
         - server-name: default
+          template-engine-name: thymeleaf
           routes:
+            - method: get
+              path: web-ui/:resourceFilename
+              handler-class: ir.piana.dev.common.handlers.StaticResourceHandler
+              response-type: text/html
             - method: get
               path: api/test/get
               handler-class: ir.piana.dev.common.handlers.GetHandler

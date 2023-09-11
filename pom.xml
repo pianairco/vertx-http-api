@@ -59,6 +59,12 @@
 			<version>${assertj.version}</version>
 			<scope>test</scope>
 		</dependency>
+
+		<dependency>
+			<groupId>ir.piana.dev</groupId>
+			<artifactId>vertx-thymeleaf</artifactId>
+			<version>1.0</version>
+		</dependency>
 	</dependencies>
 
 	<build>

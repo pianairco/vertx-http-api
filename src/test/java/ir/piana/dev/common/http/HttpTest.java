@@ -33,7 +33,6 @@ public class HttpTest {
     @ComponentScan("ir.piana.dev")
     @Import(VertxHttpClientAutoConfiguration.class)
     static class TestConfig {
-
     }
 
     @Autowired
