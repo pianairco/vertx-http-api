@@ -1,44 +1,67 @@
 package ir.piana.dev.common.vertx.http.server;
 
 import io.vertx.core.Vertx;
-import io.vertx.core.http.HttpMethod;
-import io.vertx.core.http.HttpServer;
-import io.vertx.core.http.HttpServerOptions;
-import io.vertx.core.http.HttpServerResponse;
+import io.vertx.core.buffer.Buffer;
+import io.vertx.core.http.*;
+import io.vertx.core.http.impl.CookieImpl;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
-import io.vertx.ext.web.common.template.TemplateEngine;
 import io.vertx.ext.web.handler.StaticHandler;
 import ir.piana.dev.common.handler.*;
+import ir.piana.dev.common.http.auth.AuthPhraseConsumable;
 import ir.piana.dev.common.http.server.*;
 import ir.piana.dev.common.util.MapAny;
 import ir.piana.dev.common.util.MapStrings;
 import ir.piana.dev.common.vertx.VertxAutoConfiguration;
 import ir.piana.dev.common.vertx.http.HandlerStatusNatureToHttpStatusConverter;
-import ir.piana.dev.common.vertx.http.tmpl.VertxThymeleafAutoConfiguration;
+import ir.piana.dev.common.vertx.http.server.auth.VertxAuthPhraseProvider;
 import ir.piana.dev.common.vertx.http.tmpl.VertxThymeleafTemplateEngine;
 import ir.piana.dev.jsonparser.json.JsonParser;
+import ir.piana.dev.jsonparser.json.JsonTarget;
+import ir.piana.dev.jsonparser.json.JsonTargetBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.MessageSource;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Import;
-import org.springframework.context.annotation.Profile;
+import org.springframework.context.annotation.*;
 
 import java.net.HttpURLConnection;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Configuration
 @Import(VertxAutoConfiguration.class)
 public class VertxHttpServerAutoConfiguration {
     private final Logger logger = LoggerFactory.getLogger(this.getClass());
+
+    @Bean
+    @Profile("vertx-http-server")
+    Map<String, AuthPhraseConsumable> authPhraseConsumableMap(
+            AnnotationConfigApplicationContext applicationContext,
+            List<VertxAuthPhraseProvider> authPhraseProviders) {
+        Map<String, AuthPhraseConsumable> authPhraseConsumableMap = new LinkedHashMap<>();
+        if (authPhraseProviders == null || authPhraseProviders.isEmpty())
+            return authPhraseConsumableMap;
+        authPhraseProviders.forEach(provider -> {
+            if (provider.items() == null || !provider.items().isEmpty()) {
+                provider.items().forEach(item -> {
+                    try {
+                        Class s = Class.forName(item.getProviderClass());
+                        MapAny mapAny = MapAny.toConsume(item.getConfigs());
+                        AuthPhraseConsumable authPhraseConsumable = (AuthPhraseConsumable) s.getDeclaredConstructor(
+                                MapAny.class).newInstance(mapAny);
+                        applicationContext.registerBean(item.getName(), s,
+                                () -> authPhraseConsumable);
+                    } catch (Exception e) {
+                        logger.error("error on AuthPhraseConsumable instantiate: " + item.getProviderClass());
+                    }
+                });
+            }
+        });
+        return authPhraseConsumableMap;
+    }
 
     @Bean
     @Profile("vertx-http-server")
@@ -89,6 +112,7 @@ public class VertxHttpServerAutoConfiguration {
     @Bean
     @Profile("vertx-http-server")
     Map<String, Router> router(Vertx vertx,
+                               Map<String, AuthPhraseConsumable> authPhraseConsumableMap,
                                List<VertxWebRouterProvider> routeProviders,
                                Map<String, VertxThymeleafTemplateEngine> vertxThymeleafTemplateEngineMap,
                                JsonParser jsonParser,
@@ -96,7 +120,6 @@ public class VertxHttpServerAutoConfiguration {
                                HandlerManager handlerManager,
                                Map<String, Class> vertxHandlerClassMap,
                                Map<String, Class> vertxDtoClassMap,
-                               TemplateEngine templateEngine,
                                MessageSource messageSource) {
         Map<String, Router> routerMap = new LinkedHashMap<>();
         if (routeProviders == null)
@@ -110,6 +133,18 @@ public class VertxHttpServerAutoConfiguration {
                 }
                 Router vertxRouter = routerMap.get(httpRouterItem.getServerName());
                 for (HttpRouteItem httpRouteItem : httpRouterItem.getRoutes()) {
+                    final AuthPhraseConsumable<HttpServerRequest> authPhraseConsumable;
+                    if (httpRouterItem.getAuthPhraseProviderName() != null &&
+                            !httpRouterItem.getAuthPhraseProviderName().isEmpty()) {
+                        authPhraseConsumable = authPhraseConsumableMap.get(
+                                httpRouterItem.getAuthPhraseProviderName());
+                        if (authPhraseConsumable == null) {
+                            throw new RuntimeException("AuthPhraseProvider not exist : " +
+                                    httpRouterItem.getAuthPhraseProviderName());
+                        }
+                    } else {
+                        authPhraseConsumable = null;
+                    }
                     HttpMethod httpMethod = HttpMethod.valueOf(httpRouteItem.getMethod().trim().toUpperCase());
 
                     if (httpRouteItem.getResponse() != null) {
@@ -121,6 +156,11 @@ public class VertxHttpServerAutoConfiguration {
                         vertxRouter.route(httpMethod, httpRouteItem.getPath().startsWith("/") ? httpRouteItem.getPath() : "/" + httpRouteItem.getPath())
                                 .handler(routingContext -> {
                                     try {
+                                        final String authPhrase;
+                                        if (authPhraseConsumable != null)
+                                            authPhrase = authPhraseConsumable.consume(routingContext.request());
+                                        else
+                                            authPhrase = "";
                                         if (httpMethod == HttpMethod.POST || httpMethod == HttpMethod.PUT) {
                                             routingContext.request().bodyHandler(bodyBuffer -> {
                                                 try {
@@ -130,6 +170,14 @@ public class VertxHttpServerAutoConfiguration {
                                                     /**
                                                      * ToDo: body must be Object not Array
                                                      */
+                                                    if (httpRouteItem.getConsumeType() != null && httpRouteItem.getConsumeType().equalsIgnoreCase(
+                                                            "application/x-www-form-urlencoded")) {
+                                                        Map map = Stream.of(bodyBuffer.toString().split("&"))
+                                                                .map(p -> p.split("="))
+                                                                .map(p -> new AbstractMap.SimpleEntry(p[0], p[1]))
+                                                                .collect(Collectors.toMap(e -> e.getKey(), e -> e.getValue()));
+                                                        bodyBuffer = JsonObject.mapFrom(map).toBuffer();
+                                                    }
                                                     handle(httpRouterItem, httpRouteItem,
                                                             vertxThymeleafTemplateEngineMap,
                                                             handlerManager, vertxHandlerClassMap,
@@ -138,8 +186,8 @@ public class VertxHttpServerAutoConfiguration {
                                                                     vertxDtoClassMap.get(httpRouteItem.getDtoType()),
                                                                     MapStrings.toConsume()
                                                                             .putAll(routingContext.request().params())
-                                                                            .build(), ""),
-                                                            templateEngine, messageSource);
+                                                                            .build(), authPhrase),
+                                                            messageSource);
                                                 } catch (Exception exception) {
                                                     logger.error(exception.getMessage());
                                                     error(routingContext.response(), messageSource, exception);
@@ -156,8 +204,9 @@ public class VertxHttpServerAutoConfiguration {
                                                                         mapStrings.putAll(routingContext.queryParams());
                                                                         mapStrings.putAllOneValue(routingContext.pathParams());
                                                                     })
-                                                            .setAuthPhrase("")
-                                                            .build(), templateEngine, messageSource);
+                                                            .setAuthPhrase(authPhrase)
+                                                            .build(),
+                                                    messageSource);
                                         }
                                     } catch (Throwable exception) {
                                         logger.error(exception.getMessage());
@@ -180,7 +229,6 @@ public class VertxHttpServerAutoConfiguration {
             Map<String, Class> handlerClassMap,
             RoutingContext routingContext,
             HandlerRequest handlerRequest,
-            TemplateEngine templateEngine,
             MessageSource messageSource) {
         try {
             DeferredResult<HandlerResponse> deferredResult = handlerManager.execute(
@@ -204,29 +252,34 @@ public class VertxHttpServerAutoConfiguration {
                     VertxThymeleafTemplateEngine templateEngine,
                     HttpRouteItem routeItem) {
         if (handlerResponse instanceof HandlerResponse<?>) {
-            response.setStatusCode(HttpURLConnection.HTTP_OK)
-                    .putHeader("content-type", Optional.ofNullable(routeItem.getResponseType()).orElse("application/json"))
-                    .end(((HandlerResponse<?>) handlerResponse).getBuffer());
+            generateResponse(routeItem, response, (HandlerResponse<?>) handlerResponse);
         } else if (handlerResponse instanceof HandlerModelAndViewResponse) {
-            templateEngine.getTemplateEngine().render(((HandlerModelAndViewResponse) handlerResponse).getModel().getJsonObject(),
+            JsonObject jsonObject;
+            if (((HandlerModelAndViewResponse) handlerResponse).getModel() == null)
+                jsonObject = new JsonObject();
+            else
+                jsonObject = ((HandlerModelAndViewResponse) handlerResponse).getModel().getJsonObject();
+            templateEngine.getTemplateEngine().render(jsonObject,
                             templateEngine.getTemplateEngineItem().getDir() + "/" +
                                     ((HandlerModelAndViewResponse) handlerResponse).getView() + "." +
                                     templateEngine.getTemplateEngineItem().getPostfix())
                     .toCompletionStage().whenComplete((buffer, throwable) -> {
+                        if (((HandlerModelAndViewResponse) handlerResponse).getAuthPhrase() != null)
+                            response.addCookie(Cookie.cookie("session_id", ((HandlerModelAndViewResponse) handlerResponse).getAuthPhrase()));
                         if (throwable == null) {
                             response.setStatusCode(HttpURLConnection.HTTP_OK)
-                                    .putHeader("content-type", Optional.ofNullable(routeItem.getResponseType()).orElse("text/html; charset=utf-8"))
+                                    .putHeader("content-type", Optional.ofNullable(routeItem.getProduceType()).orElse("text/html; charset=utf-8"))
                                     .end(buffer);
                         } else {
                             logger.error(throwable.getMessage());
                             response.setStatusCode(HttpURLConnection.HTTP_INTERNAL_ERROR)
-                                    .putHeader("content-type", Optional.ofNullable(routeItem.getResponseType()).orElse("text/html; charset=utf-8"))
+                                    .putHeader("content-type", Optional.ofNullable(routeItem.getProduceType()).orElse("text/html; charset=utf-8"))
                                     .end("Internal Error Occurred!");
                         }
                     });
         } else {
             response.setStatusCode(HttpURLConnection.HTTP_INTERNAL_ERROR)
-                    .putHeader("content-type", Optional.ofNullable(routeItem.getResponseType()).orElse("application/json"))
+                    .putHeader("content-type", Optional.ofNullable(routeItem.getProduceType()).orElse("application/json"))
                     .end(/*ToDo In future it should be return json*/"not response");
         }
     }
@@ -258,10 +311,64 @@ public class VertxHttpServerAutoConfiguration {
                 .end(JsonObject.mapFrom(throwableError).toBuffer());
     }
 
+    private void generateResponse(
+            HttpRouteItem routeItem,
+            HttpServerResponse response,
+            HandlerResponse handlerResponse) {
+        response.putHeader("content-type",
+                Optional.ofNullable(routeItem.getProduceType()).orElse("application/json"));
+        if (routeItem.getProduceCooke() != null && !routeItem.getProduceCooke().isEmpty()) {
+            routeItem.getProduceCooke().forEach(e -> {
+                response.addCookie(Cookie.cookie(e.getName(), cookieValue(e.getValue(), handlerResponse)));
+            });
+        }
+        if (routeItem.getProduceModel() != null && !routeItem.getProduceModel().isEmpty()) {
+            JsonTargetBuilder jsonTargetBuilder = JsonTargetBuilder.asObject();
+            routeItem.getProduceModel().forEach(e -> {
+                jsonTargetBuilder.add(
+                        e.getName(), responseValue(e.getValue(), handlerResponse));
+            });
+            response.setStatusCode(HttpURLConnection.HTTP_OK)
+                    .end(jsonTargetBuilder.build().getJsonObject().toBuffer());
+        } else {
+            response.setStatusCode(HttpURLConnection.HTTP_OK)
+                    .end(handlerResponse.getBuffer());
+        }
+    }
+
+    private String cookieValue(String valPhrase, HandlerResponse handlerResponse) {
+        if (valPhrase.startsWith("$")) {
+            if (valPhrase.equalsIgnoreCase("$auth-phrase"))
+                return handlerResponse.getAuthPhrase();
+            else if (valPhrase.startsWith("$response(")) {
+                valPhrase = valPhrase.substring(9, valPhrase.length() - 1);
+                handlerResponse.getJsonTarget().asString(valPhrase);
+            } else {
+                return null;
+            }
+        }
+        return valPhrase;
+    }
+
+    private String responseValue(String valPhrase, HandlerResponse handlerResponse) {
+        if (valPhrase.startsWith("$")) {
+            if (valPhrase.equalsIgnoreCase("$auth-phrase"))
+                return handlerResponse.getAuthPhrase();
+            else if (valPhrase.startsWith("$response(")) {
+                valPhrase = valPhrase.substring(9, valPhrase.length() - 1);
+                handlerResponse.getJsonTarget().asObject(valPhrase);
+            } else {
+                return null;
+            }
+        }
+        return valPhrase;
+    }
+
     @Bean
     @Profile("vertx-http-server")
     Map<String, HttpServer> httpServers(
-            Vertx vertx, Map<String, Router> routerMap,
+            Vertx vertx,
+            Map<String, Router> routerMap,
             List<VertxWebServerProvider> serverProviders) {
         Map<String, HttpServer> httpServerMap = new LinkedHashMap<>();
         Map<String, HttpServerItem> serverConfMap = new LinkedHashMap<>();

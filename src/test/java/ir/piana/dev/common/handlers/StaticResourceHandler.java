@@ -11,7 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 
 @Handler
-public class StaticResourceHandler extends BaseRequestHandler {
+public class StaticResourceHandler extends AuthorizableRequestHandler {
     @Autowired
     protected TemplateEngine templateEngine;
 

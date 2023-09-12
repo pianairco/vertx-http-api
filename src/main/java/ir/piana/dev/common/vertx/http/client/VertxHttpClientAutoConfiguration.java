@@ -9,12 +9,8 @@ import ir.piana.dev.common.http.client.mock.MockHttpItem;
 import ir.piana.dev.common.http.client.mock.MockHttpResponse;
 import ir.piana.dev.common.http.client.mock.MockRouteItem;
 import ir.piana.dev.common.http.client.mock.MockWebClientProvider;
-import ir.piana.dev.common.service.HandlerConfigProvider;
-import ir.piana.dev.common.util.MapAny;
-import ir.piana.dev.common.vertx.VertxAutoConfiguration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.config.ConfigurableBeanFactory;
 import org.springframework.context.annotation.*;
 

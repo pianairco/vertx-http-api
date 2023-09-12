@@ -13,12 +13,5 @@ import java.util.List;
 
 @Component
 @ConfigurationProperties(prefix = "ir.piana.dev.common.test.template-engines")
-@Setter
-public class VertxTemplateEngineProviderImpl implements VertxThymeleafTemplateEngineProvider {
-    private List<TemplateEngineItem> items;
-
-    @Override
-    public List<TemplateEngineItem> templateEngines() {
-        return items;
-    }
+public class VertxTemplateEngineProviderImpl extends VertxThymeleafTemplateEngineProvider {
 }

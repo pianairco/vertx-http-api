@@ -52,7 +52,7 @@ ir.piana.dev.common:
             - method: get
               path: web-ui/:resourceFilename
               handler-class: ir.piana.dev.common.handlers.StaticResourceHandler
-              response-type: text/html
+              produce-type: text/html
             - method: get
               path: api/test/get
               handler-class: ir.piana.dev.common.handlers.GetHandler
@@ -60,12 +60,12 @@ ir.piana.dev.common:
               path: api/test/post
               handler-class: ir.piana.dev.common.handlers.PostHandler
               dto-type: ir.piana.dev.common.handlers.PostHandler$Request
-              response-type: application/json
+              produce-type: application/json
             - method: post
               path: api/test/error
               handler-class: ir.piana.dev.common.handlers.ErrorHandler
               dto-type: ir.piana.dev.common.handlers.ErrorHandler$Request
-              response-type: application/json
+              produce-type: application/json
             - method: get
               path: ready
               response: '{"status": "up", "time": "12:00:00"}'
