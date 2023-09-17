@@ -35,9 +35,19 @@ ir.piana.dev.common:
         - name: thymeleaf
           dir: web-ui
           postfix: html
+    auth-phrase-provider:
+      items:
+        - name: vertx-cookie-base
+          provider-class: ir.piana.dev.common.vertx.http.server.auth.VertxCookieBaseAuthPhraseConsumable$Default
+          configs:
+            cookie-name: session-id
     web-server:
       items:
         - name: default
+          routers:
+            - default
+          template-engine-name: thymeleaf
+          auth-phrase-provider-name: vertx-cookie-base
           host: ${HTTP_SERVER_HOST:localhost}
           port: ${HTTP_SERVER_PORT:8080}
           idle-timeout: ${HTTP_SERVER_IDLE_TIMEOUT:10}
@@ -46,8 +56,7 @@ ir.piana.dev.common:
             static-resource-dir: webroot
     web-router:
       items:
-        - server-name: default
-          template-engine-name: thymeleaf
+        - name: default
           routes:
             - method: get
               path: web-ui/:resourceFilename
