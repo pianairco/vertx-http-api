@@ -35,6 +35,7 @@ ir.piana.dev.common:
         - name: thymeleaf
           dir: web-ui
           postfix: html
+          cacheable: false
     auth-phrase-provider:
       items:
         - name: vertx-cookie-base

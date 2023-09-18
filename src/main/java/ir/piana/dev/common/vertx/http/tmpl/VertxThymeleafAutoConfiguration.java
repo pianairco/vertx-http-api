@@ -13,10 +13,7 @@ import lombok.Data;
 import lombok.Getter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Import;
-import org.springframework.context.annotation.Profile;
+import org.springframework.context.annotation.*;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -31,6 +28,7 @@ public class VertxThymeleafAutoConfiguration {
     @Profile("vertx-http-server")
     Map<String, VertxThymeleafTemplateEngine> vertxThymeleafTemplateEngineMap(
             Vertx vertx,
+            AnnotationConfigApplicationContext applicationContext,
             List<VertxThymeleafTemplateEngineProvider> templateEngineProviders) {
         Map<String, VertxThymeleafTemplateEngine> map = new LinkedHashMap<>();
         if (templateEngineProviders == null)
@@ -41,11 +39,23 @@ public class VertxThymeleafAutoConfiguration {
             for (TemplateEngineItem templateEngineItem : provider.templateEngines()) {
                 if (templateEngineItem.getName() != null &&
                         !map.containsKey(templateEngineItem.getName())) {
-                    TemplateEngine templateEngine = ThymeleafTemplateEngine.create(vertx);
+                    TemplateEngine templateEngine = ThymeleafTemplateEngine.create(vertx, templateEngineItem.isCacheable());
                     map.put(templateEngineItem.getName(), new VertxThymeleafTemplateEngine(templateEngine, templateEngineItem));
+                    applicationContext.registerBean(templateEngineItem.getName(), VertxThymeleafTemplateEngine.class,
+                            () -> map.get(templateEngineItem.getName()));
                 }
             }
         }
         return map;
+    }
+
+    @Bean("defaultVertxThymeleafTemplateEngine")
+    @Primary
+    @Profile("vertx-http-server")
+    VertxThymeleafTemplateEngine vertxThymeleafTemplateEngine(
+            Map<String, VertxThymeleafTemplateEngine> vertxThymeleafTemplateEngineMap
+    ) {
+        return vertxThymeleafTemplateEngineMap.isEmpty() ? null :
+                vertxThymeleafTemplateEngineMap.entrySet().stream().findFirst().get().getValue();
     }
 }

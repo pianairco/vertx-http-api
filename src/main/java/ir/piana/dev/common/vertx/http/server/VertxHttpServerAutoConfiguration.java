@@ -1,5 +1,6 @@
 package ir.piana.dev.common.vertx.http.server;
 
+import io.netty.handler.codec.http.HttpStatusClass;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.*;
@@ -10,10 +11,12 @@ import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.common.template.TemplateEngine;
 import io.vertx.ext.web.handler.StaticHandler;
 import ir.piana.dev.common.handler.*;
+import ir.piana.dev.common.handler.HandlerModelAndViewResponse.HandlerModelAndViewResponseBuilder;
 import ir.piana.dev.common.http.auth.AuthPhraseConsumable;
 import ir.piana.dev.common.http.server.*;
 import ir.piana.dev.common.util.MapAny;
 import ir.piana.dev.common.util.MapStrings;
+import ir.piana.dev.common.util.Validation;
 import ir.piana.dev.common.vertx.VertxAutoConfiguration;
 import ir.piana.dev.common.vertx.http.HandlerStatusNatureToHttpStatusConverter;
 import ir.piana.dev.common.vertx.http.server.auth.VertxAuthPhraseProvider;
@@ -24,6 +27,7 @@ import ir.piana.dev.jsonparser.json.JsonTargetBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.MessageSource;
 import org.springframework.context.annotation.*;
 
@@ -162,14 +166,56 @@ public class VertxHttpServerAutoConfiguration {
         return httpServersItemMap;
     }
 
+    @Bean
+    @Profile("vertx-http-server")
+    Map<String, VertxHttpErrorHandleable> errorHandleableBeanMap(
+            List<VertxHttpErrorHandleable> errorHandleableList) {
+        Map<String, VertxHttpErrorHandleable> errorHandleableBeanMap = new LinkedHashMap<>();
+        errorHandleableList.forEach(e ->
+            errorHandleableBeanMap.put(e.getClass().getName(), e)
+        );
+        return errorHandleableBeanMap;
+    }
+
+    @Bean
+    @Profile("vertx-http-server")
+    Map<String, Map<Integer, VertxHttpErrorHandleable>> serverMapToErrorHandleableMap(
+            @Qualifier("errorHandleableBeanMap") Map<String, VertxHttpErrorHandleable> errorHandleableBeanMap,
+            Map<String, HttpServerItem> vertxServerNameToHttpServerItemMap) {
+        Map<String, Map<Integer, VertxHttpErrorHandleable>> serverMapToErrorHandleableMap = new LinkedHashMap<>();
+        vertxServerNameToHttpServerItemMap.forEach((serverName, httpServerItem) -> {
+            Map<Integer, VertxHttpErrorHandleable> errorHandleableMap = new LinkedHashMap<>();
+            if (httpServerItem.getSpecificConfigs().containsKey("error-handlers")) {
+                Map<String, String> errorHandlerConfig = (Map<String, String>) httpServerItem
+                        .getSpecificConfigs().get("error-handlers");
+                Map<Integer, VertxHttpErrorHandleable> errorMap =
+                errorHandlerConfig.entrySet().stream()
+                        .filter(e -> Validation.isValidHttpStatusCode(e.getKey()) &&
+                                errorHandleableBeanMap.containsKey(e.getValue()))
+                        .map(e -> new AbstractMap.SimpleEntry<>(
+                                Integer.valueOf(e.getKey()),
+                                errorHandleableBeanMap.get(e.getValue())))
+                        .collect(Collectors.toMap(e -> e.getKey(), e -> e.getValue()));
+                serverMapToErrorHandleableMap.put(serverName, errorMap);
+            } else {
+                serverMapToErrorHandleableMap.put(serverName, new LinkedHashMap<>());
+            }
+        });
+        return serverMapToErrorHandleableMap;
+    }
+
     @Bean("vertxServerNameToHttpRouteItemMap")
     @Profile("vertx-http-server")
     Map<String, List<HttpRouteItem>> vertxServerNameToHttpRouteItemMap(
             @Qualifier("vertxServerNameToHttpServerItemMap")
             Map<String, HttpServerItem> httpServersItemMap,
             @Qualifier("vertxRouterNameToHttpRouterItemMap")
-            Map<String, HttpRouterItem> routerNameToHttpRouterItemMap) {
+            Map<String, HttpRouterItem> routerNameToHttpRouterItemMap,
+            @Qualifier("vertxHandlerClassMap") Map<String, Class> vertxHandlerClassMap,
+            RuntimeHandlerBuilder runtimeHandlerBuilder,
+            HandlerRuntimeExceptionThrower thrower) {
         Map<String, List<HttpRouteItem>> serverNameToHttpRouteItemMap = new LinkedHashMap<>();
+
         httpServersItemMap.forEach((serverName, httpServerItem) -> {
             final List<HttpRouteItem> httpRouteItems = new ArrayList<>();
             for (String routerName : httpServerItem.getRouters()) {
@@ -185,6 +231,18 @@ public class VertxHttpServerAutoConfiguration {
                     }
                 });
             }
+            /*if (httpRouteItems.stream().noneMatch(routeItem ->
+                    "*".equals(routeItem.getPath()) && routeItem.getMethod() == null)) {
+                RequestHandler requestHandler = runtimeHandlerBuilder.baseRequestHandler((handlerRequest, transporter) -> {
+                    throw thrower.generate(HandlerErrorType.NOT_FOUND.generateDetailedError("resource.not-found"));
+                });
+                vertxHandlerClassMap.put(requestHandler.getClass().getName(), requestHandler.getClass());
+                httpRouteItems.add(HttpRouteItem.builder()
+                        .path("*")
+                        .produceType("text/html")
+                        .handlerClass(requestHandler.getClass().getName())
+                        .build());
+            }*/
             serverNameToHttpRouteItemMap.put(serverName, httpRouteItems);
         });
         return serverNameToHttpRouteItemMap;
@@ -204,8 +262,11 @@ public class VertxHttpServerAutoConfiguration {
             HandlerManager handlerManager,
             Map<String, Class> vertxHandlerClassMap,
             Map<String, Class> vertxDtoClassMap,
-            MessageSource messageSource
-            ) {
+            MessageSource messageSource,
+            HandlerRuntimeExceptionThrower thrower,
+            ApplicationContext applicationContext,
+            Map<String, Map<Integer, VertxHttpErrorHandleable>> serverMapToErrorHandleableMap
+    ) {
         Map<String, HttpServer> httpServerMap = new LinkedHashMap<>();
         serverNameToHttpServerItemMap.forEach((serverName, httpServerItem) -> {
             HttpServer httpServer = vertx.createHttpServer(new HttpServerOptions()
@@ -218,6 +279,11 @@ public class VertxHttpServerAutoConfiguration {
                     .setTcpFastOpen(Boolean.TRUE));
             httpServerMap.put(httpServerItem.getName(), httpServer);
 
+            Map<Integer, VertxHttpErrorHandleable> errorHandleableMap = null;
+            if (serverMapToErrorHandleableMap.containsKey(httpServerItem.getName())) {
+                errorHandleableMap = serverMapToErrorHandleableMap.get(httpServerItem.getName());
+            }
+
             Router vertxRouter = createVertxRouter(
                     vertx,
                     httpServerItem,
@@ -229,14 +295,15 @@ public class VertxHttpServerAutoConfiguration {
                     handlerManager,
                     vertxHandlerClassMap,
                     vertxDtoClassMap,
-                    messageSource);
+                    messageSource, thrower,
+                    errorHandleableMap);
             if (httpServerItem.getSpecificConfigs() != null) {
                 MapAny config = MapAny.toConsume(httpServerItem.getSpecificConfigs());
                 String staticResourceDir = config.getValue("static-resource-dir");
                 String staticResourceBasePath = config.getValue("static-resource-base-path");
                 if (staticResourceDir != null && !staticResourceDir.isEmpty()) {
                     vertxRouter.route("/" + staticResourceBasePath + "/*")
-                            .handler(StaticHandler.create(staticResourceDir));
+                            .handler(StaticHandler.create(staticResourceDir).setCachingEnabled(false));
                 }
             }
 
@@ -248,6 +315,7 @@ public class VertxHttpServerAutoConfiguration {
                     httpServerItem.getHost(), httpServerItem.getPort(),
                     vertx.isNativeTransportEnabled() ? "enabled" : "not enabled");
         });
+
 
         return httpServerMap;
     }
@@ -262,86 +330,184 @@ public class VertxHttpServerAutoConfiguration {
             HandlerManager handlerManager,
             Map<String, Class> vertxHandlerClassMap,
             Map<String, Class> vertxDtoClassMap,
-            MessageSource messageSource) {
+            MessageSource messageSource,
+            HandlerRuntimeExceptionThrower thrower,
+            Map<Integer, VertxHttpErrorHandleable> errorHandleableMap) {
         Router vertxRouter = Router.router(vertx);
+
         for (HttpRouteItem httpRouteItem : httpRouteItems) {
-            HttpMethod httpMethod = HttpMethod.valueOf(httpRouteItem.getMethod().trim().toUpperCase());
+            HttpMethod httpMethod = httpRouteItem.getMethod() == null ? null :
+                    HttpMethod.valueOf(httpRouteItem.getMethod().trim().toUpperCase());
 
             if (httpRouteItem.getResponse() != null) {
-                vertxRouter.route(httpMethod, httpRouteItem.getPath().startsWith("/") ? httpRouteItem.getPath() : "/" + httpRouteItem.getPath())
-                        .handler(routingContext -> {
-                            routingContext.response().setStatusCode(200).end(httpRouteItem.getResponse());
-                        });
+                if (httpMethod == null) {
+                    vertxRouter.route(httpRouteItem.getPath().startsWith("/") ?
+                                    httpRouteItem.getPath() : "/" + httpRouteItem.getPath())
+                            .handler(routingContext -> {
+                                routingContext.response().setStatusCode(200)
+                                        .end(httpRouteItem.getResponse());
+                            });
+                } else {
+                    vertxRouter.route(httpMethod, httpRouteItem.getPath().startsWith("/") ?
+                                    httpRouteItem.getPath() : "/" + httpRouteItem.getPath())
+                            .handler(routingContext -> {
+                                routingContext.response().setStatusCode(200)
+                                        .end(httpRouteItem.getResponse());
+                            });
+                }
             } else {
-                vertxRouter.route(httpMethod, httpRouteItem.getPath().startsWith("/") ? httpRouteItem.getPath() : "/" + httpRouteItem.getPath())
-                        .handler(routingContext -> {
-                            try {
-                                final String authPhrase;
-                                if (authPhraseConsumable != null)
-                                    authPhrase = authPhraseConsumable.consume(routingContext.request());
-                                else
-                                    authPhrase = "";
-                                if (httpMethod == HttpMethod.POST || httpMethod == HttpMethod.PUT) {
-                                    routingContext.request().bodyHandler(bodyBuffer -> {
-                                        try {
-                                            if (httpRouteItem.getDtoType() != null && bodyBuffer.length() == 0) {
-                                                throw new RuntimeException("request body required");
-                                            }
-                                            /**
-                                             * ToDo: body must be Object not Array
-                                             */
-                                            if (httpRouteItem.getConsumeType() != null && httpRouteItem.getConsumeType().equalsIgnoreCase(
-                                                    "application/x-www-form-urlencoded")) {
-                                                Map map = Stream.of(bodyBuffer.toString().split("&"))
-                                                        .map(p -> p.split("="))
-                                                        .map(p -> new AbstractMap.SimpleEntry(p[0], p[1]))
-                                                        .collect(Collectors.toMap(e -> e.getKey(), e -> e.getValue()));
-                                                bodyBuffer = JsonObject.mapFrom(map).toBuffer();
-                                            }
-                                            handle(httpServerItem,
-                                                    httpRouteItem,
-                                                    authPhraseConsumable,
-                                                    templateEngine,
-                                                    handlerManager,
-                                                    vertxHandlerClassMap.get(httpRouteItem.getHandlerClass()),
-                                                    routingContext,
-                                                    handlerRequestBuilder.fromBuffer(bodyBuffer,
-                                                            vertxDtoClassMap.get(httpRouteItem.getDtoType()),
-                                                            MapStrings.toConsume()
-                                                                    .putAll(routingContext.request().params())
-                                                                    .build(), authPhrase),
-                                                    messageSource);
-                                        } catch (Exception exception) {
-                                            logger.error(exception.getMessage());
-                                            error(routingContext.response(), httpServerItem, httpRouteItem, messageSource, exception, templateEngine);
-                                        }
-                                    });
-                                } else {
-                                    handle(httpServerItem,
-                                            httpRouteItem,
-                                            authPhraseConsumable,
-                                            templateEngine,
-                                            handlerManager,
-                                            vertxHandlerClassMap.get(httpRouteItem.getHandlerClass()),
-                                            routingContext,
-                                            handlerRequestBuilder.withoutBody()
-                                                    .setAdditionalParam(
-                                                            (Consumer<MapStrings.Appender>) mapStrings -> {
-                                                                mapStrings.putAll(routingContext.queryParams());
-                                                                mapStrings.putAllOneValue(routingContext.pathParams());
-                                                            })
-                                                    .setAuthPhrase(authPhrase)
-                                                    .build(),
-                                            messageSource);
-                                }
-                            } catch (Throwable exception) {
-                                logger.error(exception.getMessage());
-                                error(routingContext.response(), httpServerItem, httpRouteItem, messageSource, exception, templateEngine);
-                            }
-                        });
+                if (httpMethod == null) {
+                    vertxRouter.route(httpRouteItem.getPath().startsWith("/") ?
+                                    httpRouteItem.getPath() : "/" + httpRouteItem.getPath())
+                            .handler(routingContext -> handle0(
+                                    httpMethod,
+                                    routingContext,
+                                    httpServerItem,
+                                    httpRouteItem,
+                                    authPhraseConsumable,
+                                    templateEngine,
+                                    handlerManager,
+                                    handlerRequestBuilder,
+                                    vertxHandlerClassMap,
+                                    vertxDtoClassMap,
+                                    messageSource));
+                } else {
+                    vertxRouter.route(httpMethod, httpRouteItem.getPath().startsWith("/") ?
+                                    httpRouteItem.getPath() : "/" + httpRouteItem.getPath())
+                            .handler(routingContext -> handle0(
+                                    httpMethod,
+                                    routingContext,
+                                    httpServerItem,
+                                    httpRouteItem,
+                                    authPhraseConsumable,
+                                    templateEngine,
+                                    handlerManager,
+                                    handlerRequestBuilder,
+                                    vertxHandlerClassMap,
+                                    vertxDtoClassMap,
+                                    messageSource));
+                }
             }
         }
+
+        errorHandleableMap.forEach((httpErrorCode, vertxHttpErrorHandler) -> {
+            vertxRouter.errorHandler(httpErrorCode , routingContext -> {
+                final CommonResponse response = vertxHttpErrorHandler
+                        .handle(httpErrorCode, routingContext.request());
+                if (response != null) {
+                    if (response instanceof HandlerModelAndViewResponse) {
+                        templateEngine.getTemplateEngine().render(((HandlerModelAndViewResponse) response)
+                                                .getModel().getJsonObject(),
+                                        templateEngine.getTemplateEngineItem().getDir() + "/" +
+                                                ((HandlerModelAndViewResponse) response)
+                                                        .getView() + "." +
+                                                templateEngine.getTemplateEngineItem().getPostfix())
+                                .toCompletionStage().whenComplete((buffer, thr) -> {
+                                    if (thr == null) {
+                                        routingContext.response().setStatusCode(httpErrorCode)
+                                                .putHeader("content-type", "text/html; charset=utf-8")
+                                                .end(buffer);
+                                    } else {
+                                        logger.error(thr.getMessage());
+                                        routingContext.response().setStatusCode(HttpURLConnection.HTTP_INTERNAL_ERROR)
+                                                .putHeader("content-type", "text/html; charset=utf-8")
+                                                .end("Internal Error Occurred!");
+                                    }
+                                });
+                    } else {
+                        routingContext.response().setStatusCode(httpErrorCode)
+                                .putHeader("content-type", "application/json; charset=utf-8")
+                                .end(((HandlerResponse) response).getBuffer());
+                    }
+                } else {
+                    routingContext.response().setStatusCode(httpErrorCode)
+                            .putHeader("content-type", "application/json; charset=utf-8")
+                            .end(JsonTargetBuilder.asObject().add("message",
+                                            messageSource.getMessage("response.error", new Object[0],
+                                                    "error code : " + httpErrorCode, Locale.forLanguageTag("utf-8"))).build()
+                                    .getJsonObject().toBuffer());
+                }
+            });
+        });
+
         return vertxRouter;
+    }
+
+    private void handle0(
+            HttpMethod httpMethod,
+            RoutingContext routingContext,
+            HttpServerItem httpServerItem,
+            HttpRouteItem httpRouteItem,
+            AuthPhraseConsumable<HttpServerRequest, HttpServerResponse> authPhraseConsumable,
+            VertxThymeleafTemplateEngine templateEngine,
+            HandlerManager handlerManager,
+            HandlerRequestBuilder handlerRequestBuilder,
+            Map<String, Class> vertxHandlerClassMap,
+            Map<String, Class> vertxDtoClassMap,
+            MessageSource messageSource) {
+        try {
+            final String authPhrase;
+            if (authPhraseConsumable != null)
+                authPhrase = authPhraseConsumable.consume(routingContext.request());
+            else
+                authPhrase = "";
+            if (httpMethod == HttpMethod.POST || httpMethod == HttpMethod.PUT) {
+                routingContext.request().bodyHandler(bodyBuffer -> {
+                    try {
+                        if (httpRouteItem.getDtoType() != null && bodyBuffer.length() == 0) {
+                            throw new RuntimeException("request body required");
+                        }
+                        /**
+                         * ToDo: body must be Object not Array
+                         */
+                        if (httpRouteItem.getConsumeType() != null && httpRouteItem.getConsumeType().equalsIgnoreCase(
+                                "application/x-www-form-urlencoded")) {
+                            Map map = Stream.of(bodyBuffer.toString().split("&"))
+                                    .map(p -> p.split("="))
+                                    .map(p -> new AbstractMap.SimpleEntry(p[0], p[1]))
+                                    .collect(Collectors.toMap(e -> e.getKey(), e -> e.getValue()));
+                            bodyBuffer = JsonObject.mapFrom(map).toBuffer();
+                        }
+                        handle(httpServerItem,
+                                httpRouteItem,
+                                authPhraseConsumable,
+                                templateEngine,
+                                handlerManager,
+                                vertxHandlerClassMap.get(httpRouteItem.getHandlerClass()),
+                                routingContext,
+                                handlerRequestBuilder.fromBuffer(bodyBuffer,
+                                        vertxDtoClassMap.get(httpRouteItem.getDtoType()),
+                                        MapStrings.toConsume()
+                                                .putAll(routingContext.request().params())
+                                                .build(), authPhrase),
+                                messageSource);
+                    } catch (Exception exception) {
+                        logger.error(exception.getMessage());
+                        error(routingContext.response(), httpServerItem, httpRouteItem, messageSource, exception, templateEngine);
+                    }
+                });
+            } else {
+                handle(httpServerItem,
+                        httpRouteItem,
+                        authPhraseConsumable,
+                        templateEngine,
+                        handlerManager,
+                        vertxHandlerClassMap.get(httpRouteItem.getHandlerClass()),
+                        routingContext,
+                        handlerRequestBuilder.withoutBody()
+                                .setAdditionalParam(
+                                        (Consumer<MapStrings.Appender>) mapStrings -> {
+                                            mapStrings.putAll(routingContext.queryParams());
+                                            mapStrings.putAllOneValue(routingContext.pathParams());
+                                        })
+                                .setAuthPhrase(authPhrase)
+                                .build(),
+                        messageSource);
+            }
+        } catch (Throwable exception) {
+            logger.error(exception.getMessage());
+            error(routingContext.response(), httpServerItem, httpRouteItem, messageSource, exception, templateEngine);
+        }
     }
 
     private void handle(
@@ -357,7 +523,6 @@ public class VertxHttpServerAutoConfiguration {
         try {
             DeferredResult<HandlerResponse> deferredResult = handlerManager.execute(
                     handlerClass, handlerRequest);
-
             deferredResult.setResultHandler(
                     handlerResponse -> ok(routingContext.response(), handlerResponse,
                             authPhraseConsumable,
@@ -365,9 +530,13 @@ public class VertxHttpServerAutoConfiguration {
                             httpRouteItem));
 
             deferredResult.onError(throwable -> {
-                error(routingContext.response(),
+                routingContext.fail(throwable instanceof HandlerRuntimeException ?
+                        HandlerErrorToHttpStatusCode.byHandlerErrorType(
+                                ((HandlerRuntimeException)throwable).getDetailedError()
+                                        .getErrorType()).getStatusCode() : 500, throwable);
+                /*error(routingContext.response(),
                         httpServerItem, httpRouteItem,
-                        messageSource, throwable, templateEngine);
+                        messageSource, throwable, templateEngine);*/
             });
         } catch (Exception exception) {
             logger.error(exception.getMessage());
@@ -445,7 +614,7 @@ public class VertxHttpServerAutoConfiguration {
                     .toThrowableError(messageSource);
         }
 
-        if (throwableError.getType() == HandlerErrorType.PERMISSION_DENIED &&
+        /*if (throwableError.getType() == HandlerErrorType.PERMISSION_DENIED &&
                 httpServerItem.getPermissionDeniedPage() != null &&
                 httpRouteItem.getProduceType().equalsIgnoreCase("text/html")) {
             JsonObject jsonObject = JsonObject.mapFrom(throwableError);
@@ -465,10 +634,10 @@ public class VertxHttpServerAutoConfiguration {
                                     .end("Internal Error Occurred!");
                         }
                     });
-        } else {
+        } else {*/
             response.setStatusCode(httpStatus)
                     .end(JsonObject.mapFrom(throwableError).toBuffer());
-        }
+        /*}*/
 
     }
 
@@ -524,79 +693,4 @@ public class VertxHttpServerAutoConfiguration {
         }
         return valPhrase;
     }
-
-    /*@Bean
-    @Profile("vertx-http-server")
-    Map<String, HttpServer> httpServers(
-            Vertx vertx,
-            Map<String, Router> routerMap,
-            List<VertxWebServerProvider> serverProviders) {
-        Map<String, HttpServer> httpServerMap = new LinkedHashMap<>();
-        Map<String, HttpServerItem> serverConfMap = new LinkedHashMap<>();
-        if (serverProviders == null)
-            return httpServerMap;
-        for (WebServerProvider provider : serverProviders) {
-            if (provider.webServers() == null)
-                continue;
-            for (HttpServerItem server : provider.webServers()) {
-                HttpServer httpServer = null;
-                if (!httpServerMap.containsKey(server.getName()) && serverConfMap.entrySet().stream().noneMatch(entry ->
-                        (server.getHost() + ":" + server.getPort()).equals(
-                                entry.getValue().getHost() + ":" + entry.getValue().getPort()))) {
-                    httpServerMap.put(server.getName(), vertx.createHttpServer(new HttpServerOptions()
-                            .setHost(server.getHost())
-                            .setPort(server.getPort())
-                            .setIdleTimeout(server.getIdleTimeout())
-                            .setReusePort(Boolean.TRUE)
-                            .setTcpQuickAck(Boolean.TRUE)
-                            .setTcpCork(Boolean.TRUE)
-                            .setTcpFastOpen(Boolean.TRUE)));
-                    httpServer = httpServerMap.get(server.getName());
-                }
-                Router vertxRouter = routerMap.get(server.getName());
-                if (server.getSpecificConfigs() != null) {
-                    MapAny config = MapAny.toConsume(server.getSpecificConfigs());
-                    String staticResourceDir = config.getValue("static-resource-dir");
-                    String staticResourceBasePath = config.getValue("static-resource-base-path");
-                    if (staticResourceDir != null && !staticResourceDir.isEmpty()) {
-                        vertxRouter.route("/" + staticResourceBasePath + "/*")
-                                .handler(StaticHandler.create(staticResourceDir));
-                    }
-                }
-
-                if (vertxRouter != null) {
-                    var cause = httpServer.requestHandler(vertxRouter).listen().cause();
-                    if (cause != null)
-                        throw new RuntimeException(cause.getMessage());
-                }
-                logger.info("Successfully started HTTP server and listening on {}:{} with native transport {}",
-                        server.getHost(), server.getPort(),
-                        vertx.isNativeTransportEnabled() ? "enabled" : "not enabled");
-            }
-        }
-
-        return httpServerMap;
-    }*/
-
-    /*@Setter
-    @Component
-    @ConfigurationProperties(prefix = "ir.piana.dev.common.vertx.http-server")
-    @Profile("vertx-http-server")
-    static class VertxHttpServer {
-        private String name;
-        private String host;
-        private int port;
-        *//**
-     * in seconds
-     *//*
-        private int idleTimeout;
-    }*/
-
-    /*@Setter
-    @Component
-    @ConfigurationProperties(prefix = "ir.piana.dev.common.vertx.router")
-    @Profile("vertx-http-server")
-    static class VertxRouter {
-        List<HttpRouteItem> items;
-    }*/
 }

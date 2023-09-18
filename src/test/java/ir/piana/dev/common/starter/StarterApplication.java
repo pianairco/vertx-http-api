@@ -26,8 +26,8 @@ public class StarterApplication {
 		return Executors.newFixedThreadPool(10);
 	}
 
-	@Bean
+	/*@Bean
 	TemplateEngine thymeleafTemplateEngine(Vertx vertx) {
 		return ThymeleafTemplateEngine.create(vertx);
-	}
+	}*/
 }
