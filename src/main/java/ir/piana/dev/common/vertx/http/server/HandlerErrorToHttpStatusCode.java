@@ -103,6 +103,9 @@ public enum HandlerErrorToHttpStatusCode {
             case DATA_LOSS -> {
                 return HTTP_INTERNAL_ERROR;
             }
+            case REDIRECT -> {
+                return HTTP_SEE_OTHER;
+            }
         }
         return HTTP_INTERNAL_ERROR;
     }

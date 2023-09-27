@@ -1,17 +1,16 @@
 package ir.piana.dev.common.vertx.http.server;
 
-import io.netty.handler.codec.http.HttpStatusClass;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
+import io.vertx.core.file.FileSystemException;
 import io.vertx.core.http.*;
-import io.vertx.core.http.impl.CookieImpl;
 import io.vertx.core.json.JsonObject;
+import io.vertx.ext.web.Route;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
-import io.vertx.ext.web.common.template.TemplateEngine;
+import io.vertx.ext.web.handler.FileSystemAccess;
 import io.vertx.ext.web.handler.StaticHandler;
 import ir.piana.dev.common.handler.*;
-import ir.piana.dev.common.handler.HandlerModelAndViewResponse.HandlerModelAndViewResponseBuilder;
 import ir.piana.dev.common.http.auth.AuthPhraseConsumable;
 import ir.piana.dev.common.http.server.*;
 import ir.piana.dev.common.util.MapAny;
@@ -21,8 +20,6 @@ import ir.piana.dev.common.vertx.VertxAutoConfiguration;
 import ir.piana.dev.common.vertx.http.HandlerStatusNatureToHttpStatusConverter;
 import ir.piana.dev.common.vertx.http.server.auth.VertxAuthPhraseProvider;
 import ir.piana.dev.common.vertx.http.tmpl.VertxThymeleafTemplateEngine;
-import ir.piana.dev.jsonparser.json.JsonParser;
-import ir.piana.dev.jsonparser.json.JsonTarget;
 import ir.piana.dev.jsonparser.json.JsonTargetBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,6 +27,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.MessageSource;
 import org.springframework.context.annotation.*;
+import org.thymeleaf.exceptions.TemplateProcessingException;
 
 import java.net.HttpURLConnection;
 import java.util.*;
@@ -172,7 +170,7 @@ public class VertxHttpServerAutoConfiguration {
             List<VertxHttpErrorHandleable> errorHandleableList) {
         Map<String, VertxHttpErrorHandleable> errorHandleableBeanMap = new LinkedHashMap<>();
         errorHandleableList.forEach(e ->
-            errorHandleableBeanMap.put(e.getClass().getName(), e)
+                errorHandleableBeanMap.put(e.getClass().getName(), e)
         );
         return errorHandleableBeanMap;
     }
@@ -189,13 +187,13 @@ public class VertxHttpServerAutoConfiguration {
                 Map<String, String> errorHandlerConfig = (Map<String, String>) httpServerItem
                         .getSpecificConfigs().get("error-handlers");
                 Map<Integer, VertxHttpErrorHandleable> errorMap =
-                errorHandlerConfig.entrySet().stream()
-                        .filter(e -> Validation.isValidHttpStatusCode(e.getKey()) &&
-                                errorHandleableBeanMap.containsKey(e.getValue()))
-                        .map(e -> new AbstractMap.SimpleEntry<>(
-                                Integer.valueOf(e.getKey()),
-                                errorHandleableBeanMap.get(e.getValue())))
-                        .collect(Collectors.toMap(e -> e.getKey(), e -> e.getValue()));
+                        errorHandlerConfig.entrySet().stream()
+                                .filter(e -> Validation.isValidHttpStatusCode(e.getKey()) &&
+                                        errorHandleableBeanMap.containsKey(e.getValue()))
+                                .map(e -> new AbstractMap.SimpleEntry<>(
+                                        Integer.valueOf(e.getKey()),
+                                        errorHandleableBeanMap.get(e.getValue())))
+                                .collect(Collectors.toMap(e -> e.getKey(), e -> e.getValue()));
                 serverMapToErrorHandleableMap.put(serverName, errorMap);
             } else {
                 serverMapToErrorHandleableMap.put(serverName, new LinkedHashMap<>());
@@ -265,7 +263,8 @@ public class VertxHttpServerAutoConfiguration {
             MessageSource messageSource,
             HandlerRuntimeExceptionThrower thrower,
             ApplicationContext applicationContext,
-            Map<String, Map<Integer, VertxHttpErrorHandleable>> serverMapToErrorHandleableMap
+            Map<String, Map<Integer, VertxHttpErrorHandleable>> serverMapToErrorHandleableMap,
+            HandlerResponseBuilder handlerResponseBuilder
     ) {
         Map<String, HttpServer> httpServerMap = new LinkedHashMap<>();
         serverNameToHttpServerItemMap.forEach((serverName, httpServerItem) -> {
@@ -284,6 +283,7 @@ public class VertxHttpServerAutoConfiguration {
                 errorHandleableMap = serverMapToErrorHandleableMap.get(httpServerItem.getName());
             }
 
+
             Router vertxRouter = createVertxRouter(
                     vertx,
                     httpServerItem,
@@ -296,16 +296,8 @@ public class VertxHttpServerAutoConfiguration {
                     vertxHandlerClassMap,
                     vertxDtoClassMap,
                     messageSource, thrower,
-                    errorHandleableMap);
-            if (httpServerItem.getSpecificConfigs() != null) {
-                MapAny config = MapAny.toConsume(httpServerItem.getSpecificConfigs());
-                String staticResourceDir = config.getValue("static-resource-dir");
-                String staticResourceBasePath = config.getValue("static-resource-base-path");
-                if (staticResourceDir != null && !staticResourceDir.isEmpty()) {
-                    vertxRouter.route("/" + staticResourceBasePath + "/*")
-                            .handler(StaticHandler.create(staticResourceDir).setCachingEnabled(false));
-                }
-            }
+                    errorHandleableMap,
+                    handlerResponseBuilder);
 
             var cause = httpServer.requestHandler(vertxRouter).listen().cause();
             if (cause != null)
@@ -332,32 +324,80 @@ public class VertxHttpServerAutoConfiguration {
             Map<String, Class> vertxDtoClassMap,
             MessageSource messageSource,
             HandlerRuntimeExceptionThrower thrower,
-            Map<Integer, VertxHttpErrorHandleable> errorHandleableMap) {
+            Map<Integer, VertxHttpErrorHandleable> errorHandleableMap,
+            HandlerResponseBuilder handlerResponseBuilder) {
         Router vertxRouter = Router.router(vertx);
+
+        if (httpServerItem.getSpecificConfigs() != null) {
+            MapAny config = MapAny.toConsume(httpServerItem.getSpecificConfigs());
+            String staticResourceDir = config.getValue("static-resource-dir");
+            String staticResourceBasePath = config.getValue("static-resource-base-path");
+            String staticResourceCacheEnable = config.getValue("static-resource-cache-enable");
+            if (staticResourceDir != null && !staticResourceDir.isEmpty()) {
+                if (staticResourceBasePath != null && !staticResourceBasePath.isEmpty()) {
+                    vertxRouter.route("/" + staticResourceBasePath + "/*")
+                            .handler(routingContext -> {
+                                if (routingContext.request().path().endsWith(".vue") || routingContext.request().path().endsWith(".cjs")) {
+                                    routingContext.response().putHeader(
+                                            "Content-Type", "application/javascript; charset=utf-8");
+                                }
+                                routingContext.next();
+                            })
+                            .handler(StaticHandler.create(staticResourceDir.startsWith("/") ?
+                                    FileSystemAccess.ROOT : FileSystemAccess.RELATIVE,
+                                    staticResourceDir)
+                                    .setCachingEnabled(
+                                    staticResourceCacheEnable != null &&
+                                            staticResourceCacheEnable.equalsIgnoreCase("true")));
+                } else {
+                    vertxRouter.route("/*")
+                            .handler(routingContext -> {
+                                if (routingContext.request().path().endsWith(".vue") || routingContext.request().path().endsWith(".cjs")) {
+                                    routingContext.response().putHeader(
+                                            "Content-Type", "application/javascript; charset=utf-8");
+                                }
+                                routingContext.next();
+                            })
+                            .handler(StaticHandler.create(staticResourceDir.startsWith("/") ?
+                                            FileSystemAccess.ROOT : FileSystemAccess.RELATIVE,
+                                    staticResourceDir)
+                                    .setCachingEnabled(
+                                    staticResourceCacheEnable != null &&
+                                            staticResourceCacheEnable.equalsIgnoreCase("true")));
+                }
+            }
+        }
 
         for (HttpRouteItem httpRouteItem : httpRouteItems) {
             HttpMethod httpMethod = httpRouteItem.getMethod() == null ? null :
                     HttpMethod.valueOf(httpRouteItem.getMethod().trim().toUpperCase());
 
+            final Route route;
             if (httpRouteItem.getResponse() != null) {
                 if (httpMethod == null) {
-                    vertxRouter.route(httpRouteItem.getPath().startsWith("/") ?
+                    route = vertxRouter.route(httpRouteItem.getPath().startsWith("/") ?
                                     httpRouteItem.getPath() : "/" + httpRouteItem.getPath())
                             .handler(routingContext -> {
-                                routingContext.response().setStatusCode(200)
-                                        .end(httpRouteItem.getResponse());
+                                generateResponse(httpRouteItem, routingContext.response(),
+                                        handlerResponseBuilder.withoutBody().build());
+                                /*routingContext.response().setStatusCode(
+                                                Optional.ofNullable(httpRouteItem.getStatus()).orElse(200))
+                                        .end(httpRouteItem.getResponse());*/
                             });
                 } else {
-                    vertxRouter.route(httpMethod, httpRouteItem.getPath().startsWith("/") ?
+                    route = vertxRouter.route(httpMethod, httpRouteItem.getPath().startsWith("/") ?
                                     httpRouteItem.getPath() : "/" + httpRouteItem.getPath())
                             .handler(routingContext -> {
-                                routingContext.response().setStatusCode(200)
-                                        .end(httpRouteItem.getResponse());
+                                generateResponse(httpRouteItem, routingContext.response(),
+                                        handlerResponseBuilder.withoutBody().build());
+                                /*routingContext.response().setStatusCode(
+                                                Optional.ofNullable(httpRouteItem.getStatus()).orElse(200))
+                                        .end(httpRouteItem.getResponse());*/
                             });
                 }
             } else {
                 if (httpMethod == null) {
-                    vertxRouter.route(httpRouteItem.getPath().startsWith("/") ?
+                    route = vertxRouter.route(httpRouteItem.getPath().startsWith("/") ?
                                     httpRouteItem.getPath() : "/" + httpRouteItem.getPath())
                             .handler(routingContext -> handle0(
                                     httpMethod,
@@ -372,7 +412,7 @@ public class VertxHttpServerAutoConfiguration {
                                     vertxDtoClassMap,
                                     messageSource));
                 } else {
-                    vertxRouter.route(httpMethod, httpRouteItem.getPath().startsWith("/") ?
+                    route = vertxRouter.route(httpMethod, httpRouteItem.getPath().startsWith("/") ?
                                     httpRouteItem.getPath() : "/" + httpRouteItem.getPath())
                             .handler(routingContext -> handle0(
                                     httpMethod,
@@ -388,10 +428,58 @@ public class VertxHttpServerAutoConfiguration {
                                     messageSource));
                 }
             }
+            route.failureHandler(routingContext -> {
+                final HandlerErrorToHttpStatusCode httpStatus;
+                Throwable throwable = routingContext.failure();
+                if (throwable instanceof HandlerRuntimeException) {
+                    httpStatus = HandlerErrorToHttpStatusCode.byHandlerErrorType(
+                            ((HandlerRuntimeException) throwable).getDetailedError().getErrorType());
+                } else if (throwable instanceof TemplateProcessingException &&
+                        throwable.getCause() instanceof FileSystemException) {
+                    httpStatus = HandlerErrorToHttpStatusCode.HTTP_NOT_FOUND;
+                } else {
+                    httpStatus = HandlerErrorToHttpStatusCode.HTTP_INTERNAL_ERROR;
+                }
+
+                final CommonResponse handlerResponse;
+                VertxHttpErrorHandleable vertxHttpErrorHandler = errorHandleableMap.get(httpStatus.getStatusCode());
+                if (vertxHttpErrorHandler != null) {
+                    handlerResponse = vertxHttpErrorHandler.handle(
+                            httpStatus.getStatusCode(), routingContext.request());
+                } else {
+                    handlerResponse = handlerResponseBuilder.withoutBody().build();
+                }
+
+
+                if (handlerResponse instanceof HandlerModelAndViewResponse) {
+                    templateEngine.getTemplateEngine().render(((HandlerModelAndViewResponse) handlerResponse)
+                                            .getModel().getJsonObject(),
+                                    templateEngine.getTemplateEngineItem().getDir() + "/" +
+                                            ((HandlerModelAndViewResponse) handlerResponse)
+                                                    .getView() + "." +
+                                            templateEngine.getTemplateEngineItem().getPostfix())
+                            .toCompletionStage().whenComplete((buffer, thr) -> {
+                                if (thr == null) {
+                                    routingContext.response().setStatusCode(httpStatus.getStatusCode())
+                                            .putHeader("content-type", "text/html; charset=utf-8")
+                                            .end(buffer);
+                                } else {
+                                    logger.error(thr.getMessage());
+                                    routingContext.response().setStatusCode(HttpURLConnection.HTTP_INTERNAL_ERROR)
+                                            .putHeader("content-type", "text/html; charset=utf-8")
+                                            .end("Internal Error Occurred!");
+                                }
+                            });
+                } else {
+                    routingContext.response().setStatusCode(httpStatus.getStatusCode())
+                            .putHeader("content-type", "application/json; charset=utf-8")
+                            .end(((HandlerResponse) handlerResponse).getBuffer());
+                }
+            });
         }
 
         errorHandleableMap.forEach((httpErrorCode, vertxHttpErrorHandler) -> {
-            vertxRouter.errorHandler(httpErrorCode , routingContext -> {
+            vertxRouter.errorHandler(httpErrorCode, routingContext -> {
                 final CommonResponse response = vertxHttpErrorHandler
                         .handle(httpErrorCode, routingContext.request());
                 if (response != null) {
@@ -524,7 +612,7 @@ public class VertxHttpServerAutoConfiguration {
             DeferredResult<HandlerResponse> deferredResult = handlerManager.execute(
                     handlerClass, handlerRequest);
             deferredResult.setResultHandler(
-                    handlerResponse -> ok(routingContext.response(), handlerResponse,
+                    handlerResponse -> ok(routingContext, handlerResponse,
                             authPhraseConsumable,
                             templateEngine,
                             httpRouteItem));
@@ -532,7 +620,7 @@ public class VertxHttpServerAutoConfiguration {
             deferredResult.onError(throwable -> {
                 routingContext.fail(throwable instanceof HandlerRuntimeException ?
                         HandlerErrorToHttpStatusCode.byHandlerErrorType(
-                                ((HandlerRuntimeException)throwable).getDetailedError()
+                                ((HandlerRuntimeException) throwable).getDetailedError()
                                         .getErrorType()).getStatusCode() : 500, throwable);
                 /*error(routingContext.response(),
                         httpServerItem, httpRouteItem,
@@ -547,13 +635,13 @@ public class VertxHttpServerAutoConfiguration {
         }
     }
 
-    private void ok(HttpServerResponse response,
+    private void ok(RoutingContext routingContext,
                     Object handlerResponse,
                     AuthPhraseConsumable<HttpServerRequest, HttpServerResponse> authPhraseConsumable,
                     VertxThymeleafTemplateEngine templateEngine,
                     HttpRouteItem routeItem) {
         if (handlerResponse instanceof HandlerResponse<?>) {
-            generateResponse(routeItem, response, (HandlerResponse<?>) handlerResponse);
+            generateResponse(routeItem, routingContext.response(), (HandlerResponse<?>) handlerResponse);
         } else if (handlerResponse instanceof HandlerModelAndViewResponse) {
             JsonObject jsonObject;
             if (((HandlerModelAndViewResponse) handlerResponse).getModel() == null)
@@ -566,20 +654,24 @@ public class VertxHttpServerAutoConfiguration {
                                     templateEngine.getTemplateEngineItem().getPostfix())
                     .toCompletionStage().whenComplete((buffer, throwable) -> {
                         if (((HandlerModelAndViewResponse) handlerResponse).getAuthPhrase() != null)
-                            authPhraseConsumable.produce(response, ((HandlerModelAndViewResponse) handlerResponse).getAuthPhrase());
+                            authPhraseConsumable.produce(routingContext.response(), ((HandlerModelAndViewResponse) handlerResponse).getAuthPhrase());
                         if (throwable == null) {
-                            response.setStatusCode(HttpURLConnection.HTTP_OK)
+                            routingContext.response().setStatusCode(HttpURLConnection.HTTP_OK)
                                     .putHeader("content-type", Optional.ofNullable(routeItem.getProduceType()).orElse("text/html; charset=utf-8"))
                                     .end(buffer);
                         } else {
-                            logger.error(throwable.getMessage());
+                            routingContext.fail(
+                                    (throwable instanceof TemplateProcessingException &&
+                                            throwable.getCause() instanceof FileSystemException) ? 404 : 500,
+                                    throwable);
+                            /*logger.error(throwable.getMessage());
                             response.setStatusCode(HttpURLConnection.HTTP_INTERNAL_ERROR)
                                     .putHeader("content-type", Optional.ofNullable(routeItem.getProduceType()).orElse("text/html; charset=utf-8"))
-                                    .end("Internal Error Occurred!");
+                                    .end("Internal Error Occurred!");*/
                         }
                     });
         } else {
-            response.setStatusCode(HttpURLConnection.HTTP_INTERNAL_ERROR)
+            routingContext.response().setStatusCode(HttpURLConnection.HTTP_INTERNAL_ERROR)
                     .putHeader("content-type", Optional.ofNullable(routeItem.getProduceType()).orElse("application/json"))
                     .end(/*ToDo In future it should be return json*/"not response");
         }
@@ -635,8 +727,8 @@ public class VertxHttpServerAutoConfiguration {
                         }
                     });
         } else {*/
-            response.setStatusCode(httpStatus)
-                    .end(JsonObject.mapFrom(throwableError).toBuffer());
+        response.setStatusCode(httpStatus)
+                .end(JsonObject.mapFrom(throwableError).toBuffer());
         /*}*/
 
     }
@@ -647,6 +739,9 @@ public class VertxHttpServerAutoConfiguration {
             HandlerResponse handlerResponse) {
         response.putHeader("content-type",
                 Optional.ofNullable(routeItem.getProduceType()).orElse("application/json"));
+        if (routeItem.getProduceHeader() != null && !routeItem.getProduceHeader().isEmpty()) {
+            routeItem.getProduceHeader().forEach(e -> response.putHeader(e.getName(), e.getValue()));
+        }
         if (routeItem.getProduceCooke() != null && !routeItem.getProduceCooke().isEmpty()) {
             routeItem.getProduceCooke().forEach(e -> {
                 response.addCookie(Cookie.cookie(e.getName(), cookieValue(e.getValue(), handlerResponse)));
@@ -661,8 +756,10 @@ public class VertxHttpServerAutoConfiguration {
             response.setStatusCode(HttpURLConnection.HTTP_OK)
                     .end(jsonTargetBuilder.build().getJsonObject().toBuffer());
         } else {
-            response.setStatusCode(HttpURLConnection.HTTP_OK)
-                    .end(handlerResponse.getBuffer());
+            response.setStatusCode(Optional.ofNullable(routeItem.getStatus()).orElse(HttpURLConnection.HTTP_OK))
+                    .end((routeItem.getStatus() != null && routeItem.getStatus().toString().startsWith("3")) ? Buffer.buffer("") :
+                            routeItem.getResponse() != null ? Buffer.buffer(routeItem.getResponse()) :
+                                    handlerResponse.getBuffer());
         }
     }
 
